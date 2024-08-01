@@ -37,7 +37,7 @@ gcc server.c -o server.out -lpthread
 To compile the client program, open a terminal and run:
 
 ```sh
-gcc client.c -o client.out
+gcc client.c -o client.out -lpthread
 ```
 
 ## Execution
