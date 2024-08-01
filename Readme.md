@@ -62,57 +62,6 @@ To run the client program, execute the following command in the terminal:
 
 You will be prompted to enter the server address, port number, and connection ID. The default server address is `127.0.0.1` (localhost), and the default port is `4390`.
 
-### Example Interaction
-
-1. **Start the server**:
-
-   ```
-   $ ./server.out
-   Enter port (default 4390): 4390
-   Enter server ID (default default_server): my_server
-   Server ID: my_server
-   Server listening on port 4390
-   ```
-
-2. **Start the client**:
-
-   ```
-   $ ./client.out
-   Enter server address (default 127.0.0.1): 127.0.0.1
-   Enter port (default 4390): 4390
-   Enter connection ID: client1
-   ```
-
-3. **Client sends a message**:
-
-   ```
-   Enter message: Hello, server!
-   ```
-
-4. **Server receives the message and responds**:
-
-   ```
-   New connection established
-   client1 connected
-   [14:07:55] client1: Hello, server!
-   ```
-
-5. **Client receives the response**:
-
-   ```
-   [14:07:55] Server: hello from server
-   ```
-
-6. **Client exits**:
-
-   ```
-   Enter message: exit
-   ```
-
-7. **Server logs the disconnection**:
-   ```
-   client1 disconnected
-   ```
 
 ## Protocol Details
 
@@ -135,4 +84,4 @@ You will be prompted to enter the server address, port number, and connection ID
 ## Notes
 
 - Ensure the server is running before starting the client.
-- Multiple clients can connect to the server and communicate simultaneously.
+- Ensure at least two clients are running, so you can chat between them. The clients will be able to see each other's messages, and the server will see the messages and acknowledgments from the client.
