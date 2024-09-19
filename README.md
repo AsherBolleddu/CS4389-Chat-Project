@@ -19,12 +19,14 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 ## Prerequisites
 
 - GCC compiler.
+  - Ubuntu: `sudo apt install build-essential`
 - POSIX-compliant operating system (e.g., Linux, macOS).
 
 ## Compilation
 
 ### Install OpenSSL
-brew install openssl
+Macos: `brew install openssl`
+Ubuntu: `sudo apt install libssl-dev`
 
 ### Check the installation path
 brew --prefix openssl   
