@@ -6,6 +6,9 @@
 #include <netdb.h>
 #include <time.h>
 #include <pthread.h>
+#include <openssl/evp.h>
+#include <openssl/aes.h>
+#include <openssl/rand.h>
 
 #define BUFFER_SIZE 1024
 
@@ -20,8 +23,50 @@ typedef struct {
     uint16_t payload_length;
 } SCPHeader;
 
+
+unsigned char key[32] = "01234567890123456789012345678901";  // Example 32-byte AES key
+unsigned char iv[16] = "0123456789012345";                   // Example 16-byte AES IV
+
+//Function to encrypt the message
+int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int ciphertext_len;
+
+    //Create and initialize context
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        perror("Failed to create context");
+        return -1;
+    }
+
+    //Initialize encryption operation with AES-256
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+        perror("Failed to initialize encryption operation");
+        return -1;
+    }
+
+    //Provide the message to be encrypted
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
+        perror("Failed to encrypt message");
+        return -1;
+    }
+    ciphertext_len = len;
+
+    //Finalize the encryption
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+        return -1;
+    }
+    ciphertext_len += len;
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ciphertext_len;
+}
+
+
+
 // Function to send a message using the SCP protocol
-void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload) {
+void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload, unsigned char* key, unsigned char* iv) {
     SCPHeader header;
     header.version = 1;
     header.msg_type = msg_type;
@@ -29,16 +74,31 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     header.timestamp = htonl(time(NULL));    // Current timestamp
     header.sender_id = htonl(sender_id);
     header.recipient_id = htonl(recipient_id);
-    header.payload_length = htons(strlen(payload));
 
-    // Prepare the buffer with header and payload
+    // Encrypt the payload
+    unsigned char ciphertext[BUFFER_SIZE];
+    int ciphertext_len = aes_encrypt((unsigned char*)payload, strlen(payload), key, iv, ciphertext);
+
+    header.payload_length = htons(ciphertext_len);
+
+    // Prepare the buffer with header and encrypted payload
     char buffer[BUFFER_SIZE];
     memcpy(buffer, &header, sizeof(SCPHeader));
-    memcpy(buffer + sizeof(SCPHeader), payload, strlen(payload));
+    memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
+
+    // Log the original and encrypted message
+    printf("Original message: %s\n", payload);
+    printf("Encrypted message: ");
+    for (int i = 0; i < ciphertext_len; i++) {
+        printf("%02x", ciphertext[i]);
+    }
+    printf("\n");
 
     // Send the message
-    send(sock, buffer, sizeof(SCPHeader) + strlen(payload), 0);
+    send(sock, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
 }
+
+
 
 // Thread function to receive messages
 void* receive_messages(void* socket_desc) {
@@ -151,10 +211,10 @@ int main() {
         buffer[strcspn(buffer, "\n")] = 0; // Remove trailing newline
 
         if (strcmp(buffer, "exit") == 0) {
-            send_message(sock, 3, 1, 2, "Goodbye");
+            send_message(sock, 3, 1, 2, "Goodbye", key, iv);
             break;
         } else {
-            send_message(sock, 1, 1, 2, buffer);
+            send_message(sock, 1, 1, 2, buffer, key, iv);
         }
 
         memset(buffer, 0, BUFFER_SIZE);

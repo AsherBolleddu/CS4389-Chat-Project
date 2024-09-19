@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <time.h>
+#include <openssl/evp.h>
 
 #define DEFAULT_PORT 4390
 #define BUFFER_SIZE 1024
@@ -30,6 +31,52 @@ typedef struct {
 Client clients[MAX_CLIENTS];
 int client_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+//Function to decrypt the message
+int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned char *key, unsigned char *iv, unsigned char *plaintext) {
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int plaintext_len;
+
+    printf("Received encrypted message: ");
+for (int i = 0; i < ciphertext_len; i++) {
+    printf("%02x", ciphertext[i]);
+}
+printf("\nDecrypted message: %s\n", plaintext);
+
+
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        perror("Failed to create context");
+        return -1;
+    }
+
+    // Initialize the decryption operation with AES-256-CBC
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+        perror("Failed to initialize decryption");
+        return -1;
+    }
+
+    // Provide the message to be decrypted, and obtain the plaintext output
+    if (1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
+        perror("Failed to decrypt");
+        return -1;
+    }
+    plaintext_len = len;
+
+    // Finalize the decryption
+    if (1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) {
+        perror("Failed to finalize decryption");
+        return -1;
+    }
+    plaintext_len += len;
+
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+
+    return plaintext_len;
+}
+
 
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload) {
@@ -73,21 +120,14 @@ void *handle_client(void *arg) {
     int bytes_read;
     char client_id[100];
 
+    // AES key and IV
+    unsigned char key[32] = "01234567890123456789012345678901";  // 32-byte AES key
+    unsigned char iv[16] = "0123456789012345";                   // 16-byte IV
+
     // Read the client ID
     if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
         client_id[bytes_read] = '\0';
         printf("%s connected\n", client_id);
-
-        // Add the new client to the clients array
-        pthread_mutex_lock(&clients_mutex);
-        if (client_count < MAX_CLIENTS) {
-            clients[client_count].socket = client_socket;
-            strncpy(clients[client_count].id, client_id, sizeof(clients[client_count].id));
-            client_count++;
-        }
-        pthread_mutex_unlock(&clients_mutex);
-
-        broadcast_message(client_socket, "Server", "A new user has joined the chat.");
     }
 
     // Main loop to handle client messages
@@ -95,17 +135,25 @@ void *handle_client(void *arg) {
         SCPHeader *header = (SCPHeader *) buffer;
         uint8_t msg_type = header->msg_type;
 
-        char *message = buffer + sizeof(SCPHeader);
-        message[ntohs(header->payload_length)] = '\0';
+        // Decrypt the received payload
+        unsigned char plaintext[BUFFER_SIZE];
+        int ciphertext_len = ntohs(header->payload_length);
+        unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
 
-        // Log the received message with timestamp
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        printf("[%02d:%02d:%02d] %s: %s\n", t->tm_hour, t->tm_min, t->tm_sec, client_id, message);
+        // Decrypt the message
+        int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, plaintext);
+        plaintext[plaintext_len] = '\0';  // Null-terminate the decrypted message
+
+        // Log the received and decrypted message
+        printf("Received encrypted message: ");
+        for (int i = 0; i < ciphertext_len; i++) {
+            printf("%02x", ciphertext[i]);
+        }
+        printf("\nDecrypted message: %s\n", plaintext);
 
         if (msg_type == 1) {  // MESSAGE
             printf("Received MESSAGE from client\n");
-            broadcast_message(client_socket, client_id, message);
+            broadcast_message(client_socket, client_id, (char*)plaintext);
             send_message(client_socket, 2, 0, ntohl(header->sender_id), "Message received");  // MESSAGE_ACK
         } else if (msg_type == 3) {  // GOODBYE
             printf("Received GOODBYE from client\n");
@@ -115,22 +163,11 @@ void *handle_client(void *arg) {
         }
     }
 
-    // Remove the client from the clients array
-    pthread_mutex_lock(&clients_mutex);
-    for (int i = 0; i < client_count; i++) {
-        if (clients[i].socket == client_socket) {
-            for (int j = i; j < client_count - 1; j++) {
-                clients[j] = clients[j + 1];
-            }
-            client_count--;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&clients_mutex);
-
     close(client_socket);
     return NULL;
 }
+
+
 
 int main() {
     int server_fd, new_socket, *client_socket;
