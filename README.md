@@ -23,12 +23,20 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 
 ## Compilation
 
+### Install OpenSSL
+brew install openssl
+
+### Check the installation path
+brew --prefix openssl   
+Ex: /opt/homebrew/opt/openssl@3
+
 ### Server
 
 To compile the server program, open a terminal and run:
 
 ```sh
-gcc server.c -o server.out -lpthread
+# gcc server.c -o server.out -lpthread
+gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
 
 ### Client
@@ -36,7 +44,8 @@ gcc server.c -o server.out -lpthread
 To compile the client program, open a terminal and run:
 
 ```sh
-gcc client.c -o client.out -lpthread
+# gcc client.c -o client.out -lpthread
+gcc client.c -o client -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
 
 ## Execution
