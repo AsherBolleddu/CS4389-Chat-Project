@@ -19,12 +19,12 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 ## Developing with Docker
 ## Client
 
-With compose: `docker compose run client`
+With compose: `docker compose run --build client`
 Or without: `docker run --rm -it $(docker build -q -f client.Dockerfile .)`
 
 ## Server
 
-With compose: `docker compose run server`
+With compose: `docker compose run --build server`
 Or without: `docker run --rm -it $(docker build -q -f server.Dockerfile .)`
 
 ## Local development
