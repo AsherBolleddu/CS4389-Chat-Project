@@ -16,41 +16,66 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 - `server.c`: The server program that listens for incoming connections and handles multiple clients.
 - `client.c`: The client program that connects to the server and exchanges messages.
 
-## Prerequisites
+## Developing with Docker
+## Client
+
+With compose: `docker compose run client`
+Or without: `docker run --rm -it $(docker build -q -f client.Dockerfile .)`
+
+## Server
+
+With compose: `docker compose run server`
+Or without: `docker run --rm -it $(docker build -q -f server.Dockerfile .)`
+
+## Local development
+### Prerequisites
 
 - GCC compiler.
+  - Ubuntu: `sudo apt install build-essential`
 - POSIX-compliant operating system (e.g., Linux, macOS).
 
-## Compilation
+### Compilation
 
-### Install OpenSSL
-brew install openssl
+#### Install OpenSSL
+Macos: `brew install openssl`
+Ubuntu: `sudo apt install libssl-dev`
 
-### Check the installation path
+#### Check the installation path (macos only)
 brew --prefix openssl   
 Ex: /opt/homebrew/opt/openssl@3
 
-### Server
+#### Server
 
 To compile the server program, open a terminal and run:
 
+Macos:
 ```sh
-# gcc server.c -o server.out -lpthread
 gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
 
-### Client
+Ubuntu
+```bash
+gcc server.c -o server -lssl -lcrypto -pthread
+```
+
+#### Client
 
 To compile the client program, open a terminal and run:
 
+Macos:
 ```sh
 # gcc client.c -o client.out -lpthread
 gcc client.c -o client -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
 
-## Execution
+Ubuntu
+```bash
+gcc client.c -o client -lssl -lcrypto -pthread
+```
 
-### Running the Server
+### Execution
+
+#### Running the Server
 
 To run the server program, execute the following command in the terminal:
 
