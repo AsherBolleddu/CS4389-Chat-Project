@@ -24,8 +24,10 @@ Or without: `docker run --rm -it $(docker build -q -f client.Dockerfile .)`
 
 ## Server
 
-With compose: `docker compose run --build server`
-Or without: `docker run --rm -it $(docker build -q -f server.Dockerfile .)`
+With compose: `docker compose run --build --name mytestserver server`
+Or without: `docker run --name mytestserver --rm -it $(docker build -q -f server.Dockerfile .)`
+
+In both examples, `mytestserver` is the hostname (domain) of the running server container, accessible from other containers.
 
 ## Local development
 ### Prerequisites
