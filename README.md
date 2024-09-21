@@ -164,7 +164,7 @@ Example output (Client 2 - Sarah):
 
 ```
 Is the server address an IP or domain? (ip/domain): ip
-Enter server address (default server): 172.19.0.2
+Enter server address (default server): xxx.x.x.x
 Enter port (default 4390): 4390
 Enter connection ID: Sarah
 Enter message: Hi. Nice to meet you. I'm Sarah
