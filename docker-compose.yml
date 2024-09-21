@@ -1,3 +1,4 @@
+version: '3'
 services:
   server:
     build:
@@ -6,6 +7,10 @@ services:
       target: run
     tty: true
     stdin_open: true
+    ports:
+      - "4390:4390"  # Expose server port for the client to connect
+    networks:
+      - chat-network
 
   client:
     build:
@@ -14,4 +19,11 @@ services:
       target: run
     tty: true
     stdin_open: true
+    networks:
+      - chat-network
+    depends_on:
+      - server  # Ensure the server starts before the client
 
+networks:
+  chat-network:
+    driver: bridge
