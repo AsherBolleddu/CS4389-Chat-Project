@@ -54,6 +54,15 @@ Macos:
 ```sh
 gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
+To find ther Server IP:
+Run this: ``docker inspect mytestserver``
+
+and look for this
+ "Networks": {
+                "cs4389-chat-project_chat-network": {
+                    "IPAddress": "xxx.xx.x.x",
+                }
+              }
 
 Ubuntu
 ```bash
@@ -75,16 +84,6 @@ Ubuntu
 gcc client.c -o client -lssl -lcrypto -pthread
 ```
 
-#### To find ther Server IP:
-Run this: docker inspect mytestserver
-
-
-and look for this
- "Networks": {
-                "cs4389-chat-project_chat-network": {
-                    "IPAddress": "xxx.xx.x.x",
-                }
-              }
 ### Execution
 
 #### Running the Server
