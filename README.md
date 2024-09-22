@@ -76,7 +76,8 @@ gcc client.c -o client -lssl -lcrypto -pthread
 ```
 
 #### To find ther Server IP:
-Run this: docker exec -it mytestclient /bin/bash
+Run this: docker inspect mytestserver
+
 
 and look for this
  "Networks": {
@@ -101,7 +102,7 @@ Example output:
 ```
 Enter port (default 4390): 4390
 Enter server ID (default default_server): chat_server
-Server ID: chat_s�erver
+Server ID: chat_server
 Server listening on port 4390
 New connection established
 Bob connected
