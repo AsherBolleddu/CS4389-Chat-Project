@@ -54,6 +54,15 @@ Macos:
 ```sh
 gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
 ```
+To find ther Server IP:
+Run this: ``docker inspect mytestserver``
+
+and look for this
+ "Networks": {
+                "cs4389-chat-project_chat-network": {
+                    "IPAddress": "xxx.xx.x.x",
+                }
+              }
 
 Ubuntu
 ```bash
@@ -95,11 +104,30 @@ Enter server ID (default default_server): chat_server
 Server ID: chat_server
 Server listening on port 4390
 New connection established
-Alice connected
-New connection established
 Bob connected
-[14:30:15] Alice: Hello, everyone!
-[14:30:30] Bob: Hi Alice, nice to meet you!
+New connection established
+Sarah connected
+Received encrypted message: 6e290aabb120872ab25a804e2c7f61bae522e87077499fa30c2521f53617f8fb
+Decrypted message([Sarah]): Hi. Nice to meet you. I'm Sarah
+Received MESSAGE from client
+Received encrypted message: 6d9795a7f064d415f9ee146c82cf940d679eb43dbda3ebba8beb92c82fe8b09e
+Decrypted message([Bob]): Hi Sarah. I'm Bob. How are you?
+Received MESSAGE from client
+Received encrypted message: 173976dd6ac120e9bfa7973ef1f0729186eee50dd9ed296563a22fb3035c6e5b
+Decrypted message([Sarah]): I'm doing good. And you?
+Received MESSAGE from client
+Received encrypted message: 173976dd6ac120e9bfa7973ef1f072918e73fbd413df71513db80ffacc48b57f7f6bd5fcba743e1ddbbcaaf349474e0b
+Decrypted message([Bob]): I'm doing good. Thanks for asking!
+Received MESSAGE from client
+Received encrypted message: a8d107e652122f5f4f4b10539466747a
+Decrypted message([Sarah]): You are welcome
+Received MESSAGE from client
+Received encrypted message: cc20fb1775bca0c6334046891f2155c1
+Decrypted message([Sarah]): Goodbye
+Received GOODBYE from client
+Received encrypted message: cc20fb1775bca0c6334046891f2155c1
+Decrypted message([Bob]): Goodbye
+Received GOODBYE from client
 ```
 
 ### Running the Client
@@ -112,39 +140,49 @@ To run the client program, execute the following command in the terminal:
 
 You will be prompted to enter the server address, port number, and connection ID. The default server address is `127.0.0.1` (localhost), and the default port is `4390`.
 
-Example output (Client 1 - Alice):
+Example output (Client 1 - Bob):
 
 ```
 Is the server address an IP or domain? (ip/domain): ip
-Enter server address (default 127.0.0.1): 127.0.0.1
-Enter port (default 4390): 4390
-Enter connection ID: Alice
-Enter message: Hello, everyone!
-[14:30:15] Server: Message delivered
-[14:30:30] Bob: Hi Alice, nice to meet you!
-Enter message: How are you doing, Bob?
-[14:30:35] Server: Message delivered
-[14:31:00] Bob: I'm doing great, thanks for asking!
-Enter message: exit
-[14:31:30] Server: Goodbye acknowledged
-```
-
-Example output (Client 2 - Bob):
-
-```
-Is the server address an IP or domain? (ip/domain): ip
-Enter server address (default 127.0.0.1): 127.0.0.1
+Enter server address (default server): xxx.xx.x.x
 Enter port (default 4390): 4390
 Enter connection ID: Bob
-[14:30:15] Alice: Hello, everyone!
-Enter message: Hi Alice, nice to meet you!
-[14:30:30] Server: Message delivered
-[14:30:35] Alice: How are you doing, Bob?
-Enter message: I'm doing great, thanks for asking!
-[14:31:00] Server: Message delivered
-[14:31:30] Alice has left the chat
+Enter message: Hi Sarah. I'm Bob. How are you?
+Original message: Hi Sarah. I'm Bob. How are you?
+Encrypted message: 6d9795a7f064d415f9ee146c82cf940d679eb43dbda3ebba8beb92c82fe8b09e
+[20:57:15] Server: Message delivered
+Enter message: I'm doing good. Thanks for asking!
+Original message: I'm doing good. Thanks for asking!
+Encrypted message: 173976dd6ac120e9bfa7973ef1f072918e73fbd413df71513db80ffacc48b57f7f6bd5fcba743e1ddbbcaaf349474e0b
+[20:58:20] Server: Message delivered
 Enter message: exit
-[14:32:00] Server: Goodbye acknowledged
+Original message: Goodbye
+Encrypted message: cc20fb1775bca0c6334046891f2155c1
+[20:58:34] Server: Goodbye acknowledged
+```
+Example output (Client 2 - Sarah):
+
+```
+Is the server address an IP or domain? (ip/domain): ip
+Enter server address (default server): xxx.x.x.x
+Enter port (default 4390): 4390
+Enter connection ID: Sarah
+Enter message: Hi. Nice to meet you. I'm Sarah
+Original message: Hi. Nice to meet you. I'm Sarah
+Encrypted message: 6e290aabb120872ab25a804e2c7f61bae522e87077499fa30c2521f53617f8fb
+[20:56:59] Server: Message delivered
+Enter message: I'm doing good. And you?
+Original message: I'm doing good. And you?
+Encrypted message: 173976dd6ac120e9bfa7973ef1f0729186eee50dd9ed296563a22fb3035c6e5b
+[20:58:04] Server: Message delivered
+Enter message: You are welcome
+Original message: You are welcome
+Encrypted message: a8d107e652122f5f4f4b10539466747a
+[20:58:27] Server: Message delivered
+Enter message: exit
+Original message: Goodbye
+Encrypted message: cc20fb1775bca0c6334046891f2155c1
+[20:58:31] Server: Goodbye acknowledged
 ```
 
 ## Protocol Details

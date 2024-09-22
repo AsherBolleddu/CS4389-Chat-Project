@@ -38,11 +38,11 @@ int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned ch
     int len;
     int plaintext_len;
 
-    printf("Received encrypted message: ");
-for (int i = 0; i < ciphertext_len; i++) {
-    printf("%02x", ciphertext[i]);
-}
-printf("\nDecrypted message: %s\n", plaintext);
+    // printf("Received encrypted message: ");
+// for (int i = 0; i < ciphertext_len; i++) {
+//     printf("%02x", ciphertext[i]);
+// }
+// printf("\nDecrypted message: %s\n", plaintext);
 
 
     // Create and initialize the context
@@ -149,7 +149,7 @@ void *handle_client(void *arg) {
         for (int i = 0; i < ciphertext_len; i++) {
             printf("%02x", ciphertext[i]);
         }
-        printf("\nDecrypted message: %s\n", plaintext);
+        printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
 
         if (msg_type == 1) {  // MESSAGE
             printf("Received MESSAGE from client\n");

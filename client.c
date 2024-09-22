@@ -131,7 +131,7 @@ void* receive_messages(void* socket_desc) {
 }
 
 int main() {
-    char server_address[100] = "127.0.0.1";  // Default localhost address
+    char server_address[100] = "server";  // Default localhost address
     int port = 4390;  // Default port
     char type[10];
 
