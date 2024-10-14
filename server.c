@@ -10,6 +10,13 @@
 #define DEFAULT_PORT 4390
 #define BUFFER_SIZE 1024
 #define MAX_CLIENTS 10
+#define SERVER_ID_ARR_SIZE 4
+#define NUM_KEYS 4
+#define AES_KEY_LEN 32
+#define AES_IV_SIZE 16
+
+//server IDs created
+static char *serverIDs[SERVER_ID_ARR_SIZE] = {"admin_chat", "chat_1", "chat_2", "chat_3"};
 
 // Define the structure for the Simple Chat Protocol (SCP) header
 typedef struct {
@@ -27,6 +34,23 @@ typedef struct {
     int socket;
     char id[100];
 } Client;
+
+// Structure to hold key information
+typedef struct {
+  unsigned char key[AES_KEY_LEN];
+  unsigned char iv[AES_IV_SIZE];
+}AESKeyIV;
+
+// all server key and IV pairs
+AESKeyIV serverKeys[NUM_KEYS] = {
+        { "01234567890123456789012345678901", "0123456789012345" },
+        { "qkQLBzfpIqdlSIEeuL3SKwDIxcWanTKJ", "abcdefabcdefabcd" },
+        { "ablV1mwafBHnzdC9BCaXXw9bo7DtiH7T", "1122334455667788" },
+        { "OccNAAc8VsjLVB2xUgK6A3adzYz96bG8", "0011223344556677" }
+    };
+
+//global variable for functions to access the server key
+AESKeyIV serverKey;
 
 Client clients[MAX_CLIENTS];
 int client_count = 0;
@@ -121,13 +145,34 @@ void *handle_client(void *arg) {
     char client_id[100];
 
     // AES key and IV
-    unsigned char key[32] = "01234567890123456789012345678901";  // 32-byte AES key
-    unsigned char iv[16] = "0123456789012345";                   // 16-byte IV
+    
+    //32 byte key
+    unsigned char key[32];
+    
+    //16 byte iv
+    unsigned char iv[16];
+    
+    memcpy(key, serverKey.key, AES_KEY_LEN);
+    memcpy(iv, serverKey.iv, AES_IV_SIZE);
 
     // Read the client ID
     if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
         client_id[bytes_read] = '\0';
         printf("%s connected\n", client_id);
+    }
+    
+      // Sends the key to the client
+    if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN) {
+        perror("Error sending AES key");
+        close(client_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    // Sends the iv the client
+    if (send(client_socket, serverKey.iv, AES_IV_SIZE, 0) != AES_IV_SIZE) {
+        perror("Error sending AES IV");
+        close(client_socket);
+        exit(EXIT_FAILURE);
     }
 
     // Main loop to handle client messages
@@ -168,13 +213,40 @@ void *handle_client(void *arg) {
 }
 
 
+//function to check the validity of the server ID used 
+int serverIDcheck(const char *serverID) {
+    
+    //checks if the Server ID is valid
+    for(int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
+      //compares input server ID to list of server IDs
+      if(strcmp(serverID, serverIDs[i]) == 0) {
+        return 1;
+      }
+    }
+    return 0;
+}
+
+//returns the index of the server ID
+int getServerIDIndex(const char *serverID) {
+    
+    //
+    for(int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
+      //compares input server ID to list of server IDs
+      if(strcmp(serverID, serverIDs[i]) == 0) {
+        return i;
+      }
+    }
+}
+
+
 
 int main() {
     int server_fd, new_socket, *client_socket;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
     pthread_t tid;
-
+    int validServerID = 0;
+    int serverIDIndex = 0;
     int port = DEFAULT_PORT;
     char server_id[100] = "default_server";
 
@@ -184,6 +256,19 @@ int main() {
 
     printf("Enter server ID (default %s): ", server_id);
     scanf("%s", server_id);
+    
+    //checks if the server ID is valid
+    validServerID = serverIDcheck(server_id);
+    
+    if(validServerID == 0) {
+      perror("Server ID does not exist");
+      exit(EXIT_FAILURE);
+    }
+    
+    serverIDIndex = getServerIDIndex(server_id);
+    
+    // sets the server key based on the index of the server ID
+    serverKey = serverKeys[serverIDIndex];
 
     // Create socket
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
