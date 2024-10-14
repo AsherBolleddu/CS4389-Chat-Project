@@ -11,6 +11,8 @@
 #include <openssl/rand.h>
 
 #define BUFFER_SIZE 1024
+#define AES_KEY_LEN 32
+#define AES_IV_SIZE 16
 
 // Define the structure for the Simple Chat Protocol (SCP) header
 typedef struct {
@@ -23,9 +25,11 @@ typedef struct {
     uint16_t payload_length;
 } SCPHeader;
 
+// 32-byte AES key
+unsigned char key[AES_KEY_LEN];  
 
-unsigned char key[32] = "01234567890123456789012345678901";  // Example 32-byte AES key
-unsigned char iv[16] = "0123456789012345";                   // Example 16-byte AES IV
+// 16-byte AES IV
+unsigned char iv[AES_IV_SIZE];
 
 //Function to encrypt the message
 int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
@@ -196,6 +200,18 @@ int main() {
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
     getchar();  // Consume the newline character left by scanf
+    
+    // reads the iv sent from server
+    if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
+        perror("Error reading AES key");
+        exit(EXIT_FAILURE);
+    }
+
+    // reads the iv sent from server
+    if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE) {
+        perror("Error reading AES IV");
+        exit(EXIT_FAILURE);
+    }
 
     // Create a thread to handle incoming messages
     pthread_t recv_thread;
