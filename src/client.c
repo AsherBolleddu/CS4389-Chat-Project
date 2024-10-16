@@ -16,13 +16,14 @@
 #define BUFFER_SIZE 1024
 
 // 32-byte AES key
-unsigned char key[AES_KEY_LEN];  
+unsigned char key[AES_KEY_LEN];
 
 // 16-byte AES IV
 unsigned char iv[AES_IV_SIZE];
 
 // Function to send a message using the SCP protocol
-void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload, unsigned char* key, unsigned char* iv) {
+void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload,
+                  unsigned char* key, unsigned char* iv) {
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Encrypt the payload
@@ -49,7 +50,6 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 }
 
 
-
 // Thread function to receive messages
 void* receive_messages(void* socket_desc) {
     int sock = *(int*)socket_desc;
@@ -57,19 +57,21 @@ void* receive_messages(void* socket_desc) {
     int bytes_read;
 
     while ((bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
-        SCPHeader* header = (SCPHeader*) buffer;
+        SCPHeader* header = (SCPHeader*)buffer;
         char* message = buffer + sizeof(SCPHeader);
-        message[ntohs(header->payload_length)] = '\0';  // Null-terminate the message
+        message[ntohs(header->payload_length)] = '\0'; // Null-terminate the message
 
         // Display the received message with timestamp
         time_t now = time(NULL);
-        struct tm *t = localtime(&now);
+        struct tm* t = localtime(&now);
 
-        if (header->msg_type == 2) {  // MESSAGE_ACK
+        if (header->msg_type == 2) {
+            // MESSAGE_ACK
             printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
-        } else if (header->msg_type == 4) {  // GOODBYE_ACK
+        } else if (header->msg_type == 4) {
+            // GOODBYE_ACK
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
-            break;  // Exit the receive loop
+            break; // Exit the receive loop
         } else {
             printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, message);
         }
@@ -82,8 +84,8 @@ void* receive_messages(void* socket_desc) {
 
 int main() {
     char type[10] = "ip";
-    char server_address[100] = "127.0.0.1";  // Default localhost address
-    int port = 4390;  // Default port
+    char server_address[100] = "127.0.0.1"; // Default localhost address
+    int port = 4390; // Default port
 
     // Get server connection details from user
     prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
@@ -107,8 +109,8 @@ int main() {
 
     // Handle domain name resolution if needed
     if (strcmp(type, "domain") == 0) {
-        struct hostent *he;
-        struct in_addr **addr_list;
+        struct hostent* he;
+        struct in_addr** addr_list;
 
         // Resolve the server address (domain)
         if ((he = gethostbyname(server_address)) == NULL) {
@@ -116,7 +118,7 @@ int main() {
             return -1;
         }
 
-        addr_list = (struct in_addr **)he->h_addr_list;
+        addr_list = (struct in_addr**)he->h_addr_list;
         if (addr_list[0] != NULL) {
             serv_addr.sin_addr = *addr_list[0];
         } else {
@@ -132,7 +134,7 @@ int main() {
     }
 
     // Connect to the server
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("Connection failed");
         return -1;
     }
@@ -142,8 +144,8 @@ int main() {
     printf("Enter connection ID: ");
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
-    getchar();  // Consume the newline character left by scanf
-    
+    getchar(); // Consume the newline character left by scanf
+
     // reads the iv sent from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
         perror("Error reading AES key");

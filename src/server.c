@@ -15,7 +15,7 @@
 #define NUM_KEYS 4
 
 //server IDs created
-static char *serverIDs[SERVER_ID_ARR_SIZE] = {"admin_chat", "chat_1", "chat_2", "chat_3"};
+static char* serverIDs[SERVER_ID_ARR_SIZE] = {"admin_chat", "chat_1", "chat_2", "chat_3"};
 
 // Structure to hold client information
 typedef struct {
@@ -25,17 +25,17 @@ typedef struct {
 
 // Structure to hold key information
 typedef struct {
-  unsigned char key[AES_KEY_LEN];
-  unsigned char iv[AES_IV_SIZE];
+    unsigned char key[AES_KEY_LEN];
+    unsigned char iv[AES_IV_SIZE];
 } AESKeyIV;
 
 // all server key and IV pairs
 AESKeyIV serverKeys[NUM_KEYS] = {
-        { "01234567890123456789012345678901", "0123456789012345" },
-        { "qkQLBzfpIqdlSIEeuL3SKwDIxcWanTKJ", "abcdefabcdefabcd" },
-        { "ablV1mwafBHnzdC9BCaXXw9bo7DtiH7T", "1122334455667788" },
-        { "OccNAAc8VsjLVB2xUgK6A3adzYz96bG8", "0011223344556677" }
-    };
+    {"01234567890123456789012345678901", "0123456789012345"},
+    {"qkQLBzfpIqdlSIEeuL3SKwDIxcWanTKJ", "abcdefabcdefabcd"},
+    {"ablV1mwafBHnzdC9BCaXXw9bo7DtiH7T", "1122334455667788"},
+    {"OccNAAc8VsjLVB2xUgK6A3adzYz96bG8", "0011223344556677"}
+};
 
 //global variable for functions to access the server key
 AESKeyIV serverKey;
@@ -68,28 +68,28 @@ void broadcast_message(int sender_socket, const char* sender_id, const char* mes
     for (int i = 0; i < client_count; i++) {
         if (clients[i].socket != sender_socket) {
             printf("Sending broadcast to %s\n", clients[i].id);
-            send_message(clients[i].socket, 1, 0, 0, broadcast_buffer);  // MESSAGE
+            send_message(clients[i].socket, 1, 0, 0, broadcast_buffer); // MESSAGE
         }
     }
     pthread_mutex_unlock(&clients_mutex);
 }
 
 // Thread function to handle each client connection
-void *handle_client(void *arg) {
-    int client_socket = *(int *)arg;
+void* handle_client(void* arg) {
+    int client_socket = *(int*)arg;
     free(arg);
     char buffer[BUFFER_SIZE];
     int bytes_read;
     char client_id[100];
 
     // AES key and IV
-    
+
     //32 byte key
     unsigned char key[32];
-    
+
     //16 byte iv
     unsigned char iv[16];
-    
+
     memcpy(key, serverKey.key, AES_KEY_LEN);
     memcpy(iv, serverKey.iv, AES_IV_SIZE);
 
@@ -98,8 +98,8 @@ void *handle_client(void *arg) {
         client_id[bytes_read] = '\0';
         printf("%s connected\n", client_id);
     }
-    
-      // Sends the key to the client
+
+    // Sends the key to the client
     if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN) {
         perror("Error sending AES key");
         close(client_socket);
@@ -115,17 +115,17 @@ void *handle_client(void *arg) {
 
     // Main loop to handle client messages
     while ((bytes_read = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
-        SCPHeader *header = (SCPHeader *) buffer;
+        SCPHeader* header = (SCPHeader*)buffer;
         uint8_t msg_type = header->msg_type;
 
         // Decrypt the received payload
         unsigned char plaintext[BUFFER_SIZE];
         int ciphertext_len = ntohs(header->payload_length);
-        unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
+        unsigned char* ciphertext = (unsigned char*)(buffer + sizeof(SCPHeader));
 
         // Decrypt the message
         int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, plaintext);
-        plaintext[plaintext_len] = '\0';  // Null-terminate the decrypted message
+        plaintext[plaintext_len] = '\0'; // Null-terminate the decrypted message
 
         // Log the received and decrypted message
         printf("Received encrypted message: ");
@@ -134,14 +134,16 @@ void *handle_client(void *arg) {
         }
         printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
 
-        if (msg_type == 1) {  // MESSAGE
+        if (msg_type == 1) {
+            // MESSAGE
             printf("Received MESSAGE from client\n");
             broadcast_message(client_socket, client_id, (char*)plaintext);
-            send_message(client_socket, 2, 0, ntohl(header->sender_id), "Message received");  // MESSAGE_ACK
-        } else if (msg_type == 3) {  // GOODBYE
+            send_message(client_socket, 2, 0, ntohl(header->sender_id), "Message received"); // MESSAGE_ACK
+        } else if (msg_type == 3) {
+            // GOODBYE
             printf("Received GOODBYE from client\n");
             broadcast_message(client_socket, client_id, "has left the chat");
-            send_message(client_socket, 4, 0, ntohl(header->sender_id), "Goodbye acknowledged");  // GOODBYE_ACK
+            send_message(client_socket, 4, 0, ntohl(header->sender_id), "Goodbye acknowledged"); // GOODBYE_ACK
             break;
         }
     }
@@ -151,13 +153,12 @@ void *handle_client(void *arg) {
 }
 
 //returns the index of the server ID, -1 otherwise
-int getServerIDIndex(const char *serverID) {
-
-    for(int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
-      //compares input server ID to list of server IDs
-      if(strcmp(serverID, serverIDs[i]) == 0) {
-        return i;
-      }
+int getServerIDIndex(const char* serverID) {
+    for (int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
+        //compares input server ID to list of server IDs
+        if (strcmp(serverID, serverIDs[i]) == 0) {
+            return i;
+        }
     }
     return -1;
 }
@@ -175,14 +176,14 @@ int main() {
 
     prompt_user("Enter server ID", "%s", server_id);
 
-    
+
     serverIDIndex = getServerIDIndex(server_id);
 
-    if(serverIDIndex == -1){
-      perror("Server ID does not exist");
-      exit(EXIT_FAILURE);
+    if (serverIDIndex == -1) {
+        perror("Server ID does not exist");
+        exit(EXIT_FAILURE);
     }
-    
+
     // sets the server key based on the index of the server ID
     serverKey = serverKeys[serverIDIndex];
 
@@ -197,7 +198,7 @@ int main() {
     address.sin_port = htons(port);
 
     // Bind the socket to the specified port
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         perror("Bind failed");
         close(server_fd);
         exit(EXIT_FAILURE);
@@ -214,12 +215,12 @@ int main() {
     printf("Server listening on port %d\n", port);
 
     // Main loop to accept new connections
-    while ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) >= 0) {
+    while ((new_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen)) >= 0) {
         printf("New connection established\n");
         client_socket = malloc(sizeof(int));
         *client_socket = new_socket;
-        pthread_create(&tid, NULL, handle_client, (void *)client_socket);
-        pthread_detach(tid);  // Detach the thread to handle cleanup automatically
+        pthread_create(&tid, NULL, handle_client, (void*)client_socket);
+        pthread_detach(tid); // Detach the thread to handle cleanup automatically
     }
 
     if (new_socket < 0) {

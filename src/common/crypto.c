@@ -10,8 +10,9 @@
 
 
 //Function to encrypt the message
-int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
-    EVP_CIPHER_CTX *ctx;
+int aes_encrypt(const unsigned char* plaintext, int plaintext_len, unsigned char* key, unsigned char* iv,
+                unsigned char* ciphertext) {
+    EVP_CIPHER_CTX* ctx;
     int len;
     int ciphertext_len;
 
@@ -47,8 +48,9 @@ int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char
 
 
 //Function to decrypt the message
-int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned char *key, unsigned char *iv, unsigned char *plaintext) {
-    EVP_CIPHER_CTX *ctx;
+int aes_decrypt(const unsigned char* ciphertext, int ciphertext_len, unsigned char* key, unsigned char* iv,
+                unsigned char* plaintext) {
+    EVP_CIPHER_CTX* ctx;
     int len;
     int plaintext_len;
 

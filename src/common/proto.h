@@ -13,7 +13,7 @@ typedef struct {
     uint16_t payload_length;
 } SCPHeader;
 
-SCPHeader prepare_message_to_send(uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char *payload);
+SCPHeader prepare_message_to_send(uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload);
 
 #define DEFAULT_PORT 4390
 #define BUFFER_SIZE 1024
