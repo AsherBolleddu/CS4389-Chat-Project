@@ -8,22 +8,12 @@
 #include <pthread.h>
 #include <openssl/evp.h>
 #include <openssl/aes.h>
-#include <openssl/rand.h>
+
+#include "common/crypto.h"
+#include "common/prompt.h"
+#include "common/proto.h"
 
 #define BUFFER_SIZE 1024
-#define AES_KEY_LEN 32
-#define AES_IV_SIZE 16
-
-// Define the structure for the Simple Chat Protocol (SCP) header
-typedef struct {
-    uint8_t version;
-    uint8_t msg_type;
-    uint16_t seq_num;
-    uint32_t timestamp;
-    uint32_t sender_id;
-    uint32_t recipient_id;
-    uint16_t payload_length;
-} SCPHeader;
 
 // 32-byte AES key
 unsigned char key[AES_KEY_LEN];  
@@ -31,53 +21,9 @@ unsigned char key[AES_KEY_LEN];
 // 16-byte AES IV
 unsigned char iv[AES_IV_SIZE];
 
-//Function to encrypt the message
-int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
-    EVP_CIPHER_CTX *ctx;
-    int len;
-    int ciphertext_len;
-
-    //Create and initialize context
-    if (!(ctx = EVP_CIPHER_CTX_new())) {
-        perror("Failed to create context");
-        return -1;
-    }
-
-    //Initialize encryption operation with AES-256
-    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
-        perror("Failed to initialize encryption operation");
-        return -1;
-    }
-
-    //Provide the message to be encrypted
-    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
-        perror("Failed to encrypt message");
-        return -1;
-    }
-    ciphertext_len = len;
-
-    //Finalize the encryption
-    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
-        return -1;
-    }
-    ciphertext_len += len;
-
-    EVP_CIPHER_CTX_free(ctx);
-
-    return ciphertext_len;
-}
-
-
-
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload, unsigned char* key, unsigned char* iv) {
-    SCPHeader header;
-    header.version = 1;
-    header.msg_type = msg_type;
-    header.seq_num = htons(rand() % 65536);  // Generate random sequence number
-    header.timestamp = htonl(time(NULL));    // Current timestamp
-    header.sender_id = htonl(sender_id);
-    header.recipient_id = htonl(recipient_id);
+    SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Encrypt the payload
     unsigned char ciphertext[BUFFER_SIZE];
@@ -135,19 +81,16 @@ void* receive_messages(void* socket_desc) {
 }
 
 int main() {
-    char server_address[100] = "server";  // Default localhost address
+    char type[10] = "ip";
+    char server_address[100] = "127.0.0.1";  // Default localhost address
     int port = 4390;  // Default port
-    char type[10];
 
     // Get server connection details from user
-    printf("Is the server address an IP or domain? (ip/domain): ");
-    scanf("%s", type);
+    prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
 
-    printf("Enter server address (default %s): ", server_address);
-    scanf("%s", server_address);
+    prompt_user("Enter server address", "%s", server_address);
 
-    printf("Enter port (default %d): ", port);
-    scanf("%d", &port);
+    prompt_user("Enter port", "%d", &port);
 
     int sock = 0;
     struct sockaddr_in serv_addr;

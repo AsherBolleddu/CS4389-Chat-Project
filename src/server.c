@@ -7,27 +7,15 @@
 #include <time.h>
 #include <openssl/evp.h>
 
-#define DEFAULT_PORT 4390
-#define BUFFER_SIZE 1024
-#define MAX_CLIENTS 10
+#include "common/crypto.h"
+#include "common/prompt.h"
+#include "common/proto.h"
+
 #define SERVER_ID_ARR_SIZE 4
 #define NUM_KEYS 4
-#define AES_KEY_LEN 32
-#define AES_IV_SIZE 16
 
 //server IDs created
 static char *serverIDs[SERVER_ID_ARR_SIZE] = {"admin_chat", "chat_1", "chat_2", "chat_3"};
-
-// Define the structure for the Simple Chat Protocol (SCP) header
-typedef struct {
-    uint8_t version;
-    uint8_t msg_type;
-    uint16_t seq_num;
-    uint32_t timestamp;
-    uint32_t sender_id;
-    uint32_t recipient_id;
-    uint16_t payload_length;
-} SCPHeader;
 
 // Structure to hold client information
 typedef struct {
@@ -39,7 +27,7 @@ typedef struct {
 typedef struct {
   unsigned char key[AES_KEY_LEN];
   unsigned char iv[AES_IV_SIZE];
-}AESKeyIV;
+} AESKeyIV;
 
 // all server key and IV pairs
 AESKeyIV serverKeys[NUM_KEYS] = {
@@ -56,62 +44,10 @@ Client clients[MAX_CLIENTS];
 int client_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-//Function to decrypt the message
-int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned char *key, unsigned char *iv, unsigned char *plaintext) {
-    EVP_CIPHER_CTX *ctx;
-    int len;
-    int plaintext_len;
-
-    // printf("Received encrypted message: ");
-// for (int i = 0; i < ciphertext_len; i++) {
-//     printf("%02x", ciphertext[i]);
-// }
-// printf("\nDecrypted message: %s\n", plaintext);
-
-
-    // Create and initialize the context
-    if (!(ctx = EVP_CIPHER_CTX_new())) {
-        perror("Failed to create context");
-        return -1;
-    }
-
-    // Initialize the decryption operation with AES-256-CBC
-    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
-        perror("Failed to initialize decryption");
-        return -1;
-    }
-
-    // Provide the message to be decrypted, and obtain the plaintext output
-    if (1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
-        perror("Failed to decrypt");
-        return -1;
-    }
-    plaintext_len = len;
-
-    // Finalize the decryption
-    if (1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) {
-        perror("Failed to finalize decryption");
-        return -1;
-    }
-    plaintext_len += len;
-
-    // Clean up
-    EVP_CIPHER_CTX_free(ctx);
-
-    return plaintext_len;
-}
-
 
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload) {
-    SCPHeader header;
-    header.version = 1;
-    header.msg_type = msg_type;
-    header.seq_num = htons(rand() % 65536);  // Generate random sequence number
-    header.timestamp = htonl(time(NULL));    // Current timestamp
-    header.sender_id = htonl(sender_id);
-    header.recipient_id = htonl(recipient_id);
-    header.payload_length = htons(strlen(payload));
+    SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Prepare the buffer with header and payload
     char buffer[BUFFER_SIZE];
@@ -131,6 +67,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const char* mes
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < client_count; i++) {
         if (clients[i].socket != sender_socket) {
+            printf("Sending broadcast to %s\n", clients[i].id);
             send_message(clients[i].socket, 1, 0, 0, broadcast_buffer);  // MESSAGE
         }
     }
@@ -224,28 +161,6 @@ int getServerIDIndex(const char *serverID) {
     }
     return -1;
 }
-
-void prompt_user(const char *prompt, const char *format, void *variable) {
-    char input[256]; // user input buffer
-
-    // Show prompt with the default value
-    if (strcmp(format, "%d") == 0) {
-        printf("%s (default: %d): ", prompt, *((int *)variable));
-    } else if (strcmp(format, "%s") == 0) {
-        printf("%s (default: %s): ", prompt, (char *)variable);
-    } else {
-        printf("%s: ", prompt);
-    }
-
-    // Read user input
-    fgets(input, sizeof(input), stdin);
-
-    // If input is not just a newline, parse it according to the format
-    if (input[0] != '\n' || input[0] != '\0' || input[0] != '\r'){
-        sscanf(input, format, variable);
-    }
-}
-
 
 int main() {
     int server_fd, new_socket, *client_socket;
