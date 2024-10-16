@@ -21,7 +21,7 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 - `src`: Directory containing the source code files.
   - `client.c`: The client program that connects to the server and exchanges messages.
   - `server.c`: The server program that listens for incoming connections and handles multiple clients.
-  - `scp.h`: SCP header file.
+  - `common`: Code & headers shared between the server & client.
 
 ## Developing with Docker
 ### Client
@@ -175,6 +175,7 @@ Encrypted message: cc20fb1775bca0c6334046891f2155c1
 
 - Ensure the server is running before starting the client.
 - Ensure at least two clients are running, so you can chat between them. The clients will be able to see each other's messages, and the server will see the messages and acknowledgments from the client.
-- To exit a client, type "exit" as your message. This will send a GOODBYE message to the server, wait for the GOODBYE_ACK, and then close the connection.
+- To exit a client, type ".exit" as your message. This will send a GOODBYE message to the server, wait for the
+  GOODBYE_ACK, and then close the connection.
 - The server sends a MESSAGE_ACK for each message received from a client, which is displayed as "Message delivered" on the client side.
 - When a client sends a GOODBYE message, the server responds with a GOODBYE_ACK, which is displayed as "Goodbye acknowledged" on the client side before the connection is closed.
