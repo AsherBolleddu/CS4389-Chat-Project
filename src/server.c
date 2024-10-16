@@ -58,7 +58,6 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     send(sock, buffer, sizeof(SCPHeader) + strlen(payload), 0);
 }
 
-// Function to broadcast
 // Function to broadcast a message to all connected clients except the sender
 void broadcast_message(int sender_socket, const char* sender_id, const char* message) {
     char broadcast_buffer[BUFFER_SIZE];
@@ -74,6 +73,12 @@ void broadcast_message(int sender_socket, const char* sender_id, const char* mes
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void fail_client_with_error(const char* error_msg, int client_socket) {
+    perror(error_msg);
+    close(client_socket);
+    exit(EXIT_FAILURE);
+}
+
 // Thread function to handle each client connection
 void* handle_client(void* arg) {
     int client_socket = *(int*)arg;
@@ -83,12 +88,8 @@ void* handle_client(void* arg) {
     char client_id[100];
 
     // AES key and IV
-
-    //32 byte key
-    unsigned char key[32];
-
-    //16 byte iv
-    unsigned char iv[16];
+    unsigned char key[AES_KEY_LEN];
+    unsigned char iv[AES_IV_SIZE];
 
     memcpy(key, serverKey.key, AES_KEY_LEN);
     memcpy(iv, serverKey.iv, AES_IV_SIZE);
@@ -101,16 +102,12 @@ void* handle_client(void* arg) {
 
     // Sends the key to the client
     if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN) {
-        perror("Error sending AES key");
-        close(client_socket);
-        exit(EXIT_FAILURE);
+        fail_client_with_error("Error sending AES key", client_socket);
     }
 
     // Sends the iv the client
     if (send(client_socket, serverKey.iv, AES_IV_SIZE, 0) != AES_IV_SIZE) {
-        perror("Error sending AES IV");
-        close(client_socket);
-        exit(EXIT_FAILURE);
+        fail_client_with_error("Error sending AES IV", client_socket);
     }
 
     // Main loop to handle client messages
