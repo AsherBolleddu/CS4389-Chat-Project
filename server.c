@@ -32,6 +32,42 @@ Client clients[MAX_CLIENTS];
 int client_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+//Function to encrypt the message
+int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int ciphertext_len;
+
+    //Create and initialize context
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        perror("Failed to create context");
+        return -1;
+    }
+
+    //Initialize encryption operation with AES-256
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+        perror("Failed to initialize encryption operation");
+        return -1;
+    }
+
+    //Provide the message to be encrypted
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
+        perror("Failed to encrypt message");
+        return -1;
+    }
+    ciphertext_len = len;
+
+    //Finalize the encryption
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+        return -1;
+    }
+    ciphertext_len += len;
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ciphertext_len;
+}
+
 //Function to decrypt the message
 int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned char *key, unsigned char *iv, unsigned char *plaintext) {
     EVP_CIPHER_CTX *ctx;
@@ -78,6 +114,61 @@ int aes_decrypt(const unsigned char *ciphertext, int ciphertext_len, unsigned ch
 }
 
 
+// Function to compare the username and password
+int authenticate_user(const char *username, const char *password, int client_socket) {
+
+// IMPORTANT: do not change the encrypted code.
+// Any one can claim to the user name 
+    const char *credentials[][2] = {
+        {"soulcord",  "8e866315c40beb1d27a450e92849c99c"},
+        {"John",      "5d717b44c2702c6d17c57d0d508b4188"},
+        {"Dylan55",    "0b3b8b98b7a31e7e1bea2c67817a5072"},
+        {"PlzRefrain", "6defb51e204a5f8c378ead08fe0d8a2d"},
+        {"Tri",     "cff19b025b7dac4470730452e260f771"},
+        {"Chen",    "fd08c7901a4ce24d5ad1280bdaa354b7"},
+        {"seivc",    "cdecfa9e788f857de9af17f7a9e61851"},
+        {"max",   "c05f1970dca7ae8ea8b3bae9690dca6a"},
+        {"user9",   "e9702de21274513f0e66f980cf34828c"},
+        {"user10",   "88567d930e8c235e72034cfeb75e93e7"}
+    };
+
+    unsigned char key[32] = "01234567890123456789012345678901"; 
+    unsigned char iv[16] = "0123456789012345";                  
+    unsigned char encrypted_password[BUFFER_SIZE];
+    char hex_output[BUFFER_SIZE * 2];
+
+    // Encrypt the input password
+    int password_len = strlen(password);
+    int encrypted_len = aes_encrypt((unsigned char *)password, password_len, key, iv, encrypted_password);
+
+    if (encrypted_len < 0) {
+        printf("Encryption failed\n");
+        return -1;
+    }
+
+    // Convert the encrypted password to a hex string
+    for (int i = 0; i < encrypted_len; i++) {
+        sprintf(hex_output + (i * 2), "%02x", encrypted_password[i]);
+    }
+    hex_output[encrypted_len * 2] = '\0'; // Null-terminate the string
+
+    // Compare with stored credentials
+    for (int i = 0; i < sizeof(credentials) / sizeof(credentials[0]); i++) {
+        if (strcmp(username, credentials[i][0]) == 0) {
+            if (strcmp(hex_output, credentials[i][1]) == 0) {
+                printf("[%s] is login successfully.\n", username);
+                return 1; 
+                
+            } else {
+                printf("Authentication failed for user >>Try Again!: %s\n", username);
+                close(client_socket); 
+                return -1; 
+            }
+        }
+    }
+    printf("User not found: %s\n", username);
+}
+
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload) {
     SCPHeader header;
@@ -112,57 +203,80 @@ void broadcast_message(int sender_socket, const char* sender_id, const char* mes
     pthread_mutex_unlock(&clients_mutex);
 }
 
+
 // Thread function to handle each client connection
 void *handle_client(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
     char buffer[BUFFER_SIZE];
     int bytes_read;
-    char client_id[100];
+    char client_id[BUFFER_SIZE];
 
     // AES key and IV
     unsigned char key[32] = "01234567890123456789012345678901";  // 32-byte AES key
     unsigned char iv[16] = "0123456789012345";                   // 16-byte IV
 
     // Read the client ID
-    if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
-        client_id[bytes_read] = '\0';
-        printf("%s connected\n", client_id);
-    }
-
-    // Main loop to handle client messages
-    while ((bytes_read = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
-        SCPHeader *header = (SCPHeader *) buffer;
+    // uses client user name as client Id
+   if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
+  
+        SCPHeader *header = (SCPHeader *) client_id;
         uint8_t msg_type = header->msg_type;
 
         // Decrypt the received payload
         unsigned char plaintext[BUFFER_SIZE];
         int ciphertext_len = ntohs(header->payload_length);
-        unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
+        unsigned char *ciphertext = (unsigned char *)(client_id + sizeof(SCPHeader));
 
         // Decrypt the message
-        int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, plaintext);
-        plaintext[plaintext_len] = '\0';  // Null-terminate the decrypted message
+        int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, client_id);
+        client_id[strlen(client_id)] = '\0';  // Null-terminate the decrypted message
+        char *u_name= strtok(client_id, "&");
+        char *p_word= strtok(NULL, "&"); 
+        
+        int auth_type = authenticate_user(u_name, p_word, client_socket); 
+        
+        // if the user is Authenticated
+        if(auth_type == 1)
+        {
+        printf("[%s] connected.\n", u_name);
+      // Main loop to handle client messages
+       while ((bytes_read = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) 
+       {
+          SCPHeader *header = (SCPHeader *) buffer;
+          uint8_t msg_type = header->msg_type;
 
-        // Log the received and decrypted message
-        printf("Received encrypted message: ");
-        for (int i = 0; i < ciphertext_len; i++) {
+         // Decrypt the received payload
+          unsigned char plaintext[BUFFER_SIZE];
+          int ciphertext_len = ntohs(header->payload_length);
+          unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
+
+          // Decrypt the message
+         int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, plaintext);
+         plaintext[plaintext_len] = '\0';  // Null-terminate the decrypted message
+
+         // Log the received and decrypted message
+         printf("Received encrypted message: ");
+         for (int i = 0; i < ciphertext_len; i++) {
             printf("%02x", ciphertext[i]);
-        }
-        printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
+         }
+          printf("\nDecrypted message([%s]): %s\n", client_id, plaintext);
+        
+        
 
-        if (msg_type == 1) {  // MESSAGE
+         if (msg_type == 1) {  // MESSAGE
             printf("Received MESSAGE from client\n");
             broadcast_message(client_socket, client_id, (char*)plaintext);
             send_message(client_socket, 2, 0, ntohl(header->sender_id), "Message received");  // MESSAGE_ACK
-        } else if (msg_type == 3) {  // GOODBYE
+         } else if (msg_type == 3) {  // GOODBYE
             printf("Received GOODBYE from client\n");
             broadcast_message(client_socket, client_id, "has left the chat");
             send_message(client_socket, 4, 0, ntohl(header->sender_id), "Goodbye acknowledged");  // GOODBYE_ACK
             break;
-        }
+          }
+       }
+      }
     }
-
     close(client_socket);
     return NULL;
 }

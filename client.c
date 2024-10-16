@@ -130,6 +130,37 @@ void* receive_messages(void* socket_desc) {
     return NULL;
 }
 
+// login 
+  int login(int sock)
+  {
+    char user_name [20]; 
+    char password [20]; 
+    char clearchar; 
+    printf("Enter user name: "); 
+    
+    getchar(); 
+    fgets(user_name, sizeof(user_name), stdin);
+    // Remove newline if present
+    user_name[strcspn(user_name, "\n")] = 0;
+    user_name[strlen(user_name)] = '&'; 
+   
+    printf("Enter password: "); 
+    fgets(password, sizeof(password), stdin);
+    
+    // Remove newline if present
+    password[strcspn(password, "\n")] = 0;
+    
+    //scanf("%s", password); 
+    strcat(user_name, password); 
+    
+    send_message(sock, 1, 1, 2, user_name, key, iv); 
+    // clear buffer
+  // while((clearchar = getchar()) != '\n'){}; 
+    return 0;  
+}
+
+
+
 int main() {
     char server_address[100] = "server";  // Default localhost address
     int port = 4390;  // Default port
@@ -191,11 +222,15 @@ int main() {
     }
 
     // Send client ID to server
-    char client_id[100];
-    printf("Enter connection ID: ");
-    scanf("%s", client_id);
-    send(sock, client_id, strlen(client_id), 0);
-    getchar();  // Consume the newline character left by scanf
+   // char client_id[100];
+   // printf("Enter connection ID: ");
+   // scanf("%s", client_id);
+   // send(sock, client_id, strlen(client_id), 0);
+    //getchar();  // Consume the newline character left by scanf
+    
+    
+    // user login
+    login(sock); 
 
     // Create a thread to handle incoming messages
     pthread_t recv_thread;
