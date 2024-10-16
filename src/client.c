@@ -165,15 +165,25 @@ int main() {
         return -1;
     }
 
+    printf("Connected, use .help for command help\n");
+
     // Main loop for sending messages
     while (1) {
         printf("Enter message: ");
         fgets(buffer, BUFFER_SIZE, stdin);
         buffer[strcspn(buffer, "\n")] = 0; // Remove trailing newline
 
-        if (strcmp(buffer, "exit") == 0) {
-            send_message(sock, 3, 1, 2, "Goodbye", key, iv);
-            break;
+        if (buffer[0] == '.') {
+            char* command = buffer + 1; // Skip the dot
+            if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0) {
+                send_message(sock, 3, 1, 2, "Goodbye", key, iv);
+            } else if (strcmp(command, "help") == 0) {
+                printf("Available commands:\n");
+                printf(".exit, . - Disconnect from the server\n");
+                printf(".help - Show this help message\n");
+            } else {
+                printf("Unknown command: %s, try .help?\n", command);
+            }
         } else {
             send_message(sock, 1, 1, 2, buffer, key, iv);
         }
