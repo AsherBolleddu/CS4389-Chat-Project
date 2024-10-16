@@ -122,6 +122,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     send(sock, buffer, sizeof(SCPHeader) + strlen(payload), 0);
 }
 
+// Function to broadcast
 // Function to broadcast a message to all connected clients except the sender
 void broadcast_message(int sender_socket, const char* sender_id, const char* message) {
     char broadcast_buffer[BUFFER_SIZE];
