@@ -213,32 +213,38 @@ void *handle_client(void *arg) {
     return NULL;
 }
 
-
-//function to check the validity of the server ID used 
-int serverIDcheck(const char *serverID) {
-    
-    //checks if the Server ID is valid
-    for(int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
-      //compares input server ID to list of server IDs
-      if(strcmp(serverID, serverIDs[i]) == 0) {
-        return 1;
-      }
-    }
-    return 0;
-}
-
-//returns the index of the server ID
+//returns the index of the server ID, -1 otherwise
 int getServerIDIndex(const char *serverID) {
-    
-    //
+
     for(int i = 0; i < SERVER_ID_ARR_SIZE; i++) {
       //compares input server ID to list of server IDs
       if(strcmp(serverID, serverIDs[i]) == 0) {
         return i;
       }
     }
+    return -1;
 }
 
+void prompt_user(const char *prompt, const char *format, void *variable) {
+    char input[256]; // user input buffer
+
+    // Show prompt with the default value
+    if (strcmp(format, "%d") == 0) {
+        printf("%s (default: %d): ", prompt, *((int *)variable));
+    } else if (strcmp(format, "%s") == 0) {
+        printf("%s (default: %s): ", prompt, (char *)variable);
+    } else {
+        printf("%s: ", prompt);
+    }
+
+    // Read user input
+    fgets(input, sizeof(input), stdin);
+
+    // If input is not just a newline, parse it according to the format
+    if (input[0] != '\n' || input[0] != '\0' || input[0] != '\r'){
+        sscanf(input, format, variable);
+    }
+}
 
 
 int main() {
@@ -246,27 +252,21 @@ int main() {
     struct sockaddr_in address;
     int addrlen = sizeof(address);
     pthread_t tid;
-    int validServerID = 0;
     int serverIDIndex = 0;
     int port = DEFAULT_PORT;
-    char server_id[100] = "default_server";
+    char server_id[100] = "admin_chat";
 
-    // Get server configuration from user
-    printf("Enter port (default %d): ", port);
-    scanf("%d", &port);
+    prompt_user("Enter server port", "%d", &port);
 
-    printf("Enter server ID (default %s): ", server_id);
-    scanf("%s", server_id);
+    prompt_user("Enter server ID", "%s", server_id);
+
     
-    //checks if the server ID is valid
-    validServerID = serverIDcheck(server_id);
-    
-    if(validServerID == 0) {
+    serverIDIndex = getServerIDIndex(server_id);
+
+    if(serverIDIndex == -1){
       perror("Server ID does not exist");
       exit(EXIT_FAILURE);
     }
-    
-    serverIDIndex = getServerIDIndex(server_id);
     
     // sets the server key based on the index of the server ID
     serverKey = serverKeys[serverIDIndex];
