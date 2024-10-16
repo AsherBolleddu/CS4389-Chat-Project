@@ -13,87 +13,62 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 
 ## Files
 
-- `server.c`: The server program that listens for incoming connections and handles multiple clients.
-- `client.c`: The client program that connects to the server and exchanges messages.
+- `client.Dockerfile`: Dockerfile for the client program.
+- `server.Dockerfile`: Dockerfile for the server program.
+- `docker-compose.yml`: Docker Compose file for running the client and server containers.
+- `CMakeLists.txt`: CMake configuration file for building the project.
+- `README.md`: Project documentation.
+- `src`: Directory containing the source code files.
+  - `client.c`: The client program that connects to the server and exchanges messages.
+  - `server.c`: The server program that listens for incoming connections and handles multiple clients.
+  - `scp.h`: SCP header file.
 
 ## Developing with Docker
-## Client
-
-With compose: `docker compose run --build client`
+### Client
+With compose: `docker compose run --rm --build client`
 Or without: `docker run --rm -it $(docker build -q -f client.Dockerfile .)`
 
-## Server
-
+### Server
 With compose: `docker compose run --rm --build --name mytestserver server`
 Or without: `docker run --name mytestserver --rm -it $(docker build -q -f server.Dockerfile .)`
 
 In both examples, `mytestserver` is the hostname (domain) of the running server container, accessible from other containers.
-
-## Local development
-### Prerequisites
-
-- GCC compiler.
-  - Ubuntu: `sudo apt install build-essential`
-- POSIX-compliant operating system (e.g., Linux, macOS).
-
-### Compilation
-
-#### Install OpenSSL
-Macos: `brew install openssl`
-Ubuntu: `sudo apt install libssl-dev`
-
-#### Check the installation path (macos only)
-brew --prefix openssl   
-Ex: /opt/homebrew/opt/openssl@3
-
-#### Server
-
-To compile the server program, open a terminal and run:
-
-Macos:
-```sh
-gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
-```
-To find ther Server IP:
-Run this: ``docker inspect mytestserver``
-
-and look for this
+To find the Server IP, run `docker inspect mytestserver` & look for this
+```json
  "Networks": {
                 "cs4389-chat-project_chat-network": {
                     "IPAddress": "xxx.xx.x.x",
                 }
               }
+```
 
-Ubuntu
+## Developing with Cmake
+### Prerequisites
+
+- GCC compiler.
+  - Ubuntu: `sudo apt install build-essential`
+  - Macos: `xcode-select --install`
+- Cmake
+  - Ubuntu: `sudo apt install cmake`
+  - Macos: `brew install cmake`
+- OpenSSL library.
+  - Ubuntu: `sudo apt install libssl-dev`
+  - Macos: `brew install openssl`
+- POSIX-compliant operating system (e.g., Linux, macOS).
+
+### Compilation
+Configure the project using CMake & compile the source files:
 ```bash
-gcc server.c -o server -lssl -lcrypto -pthread
+cmake -B build -S . && cmake --build build
 ```
 
-#### Client
+### Running
+- `./build/server` to run the server.
+- `./build/client` to run the client.
 
-To compile the client program, open a terminal and run:
 
-Macos:
-```sh
-# gcc client.c -o client.out -lpthread
-gcc client.c -o client -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
-```
-
-Ubuntu
-```bash
-gcc client.c -o client -lssl -lcrypto -pthread
-```
-
-### Execution
-
-#### Running the Server
-
-To run the server program, execute the following command in the terminal:
-
-```sh
-./server.out
-```
-
+## Usage
+### Server
 You will be prompted to enter a port number and a server ID. The default port is `4390`, and the default server ID is `default_server`.
 
 Example output:
@@ -130,14 +105,7 @@ Decrypted message([Bob]): Goodbye
 Received GOODBYE from client
 ```
 
-### Running the Client
-
-To run the client program, execute the following command in the terminal:
-
-```sh
-./client.out
-```
-
+### Client
 You will be prompted to enter the server address, port number, and connection ID. The default server address is `127.0.0.1` (localhost), and the default port is `4390`.
 
 Example output (Client 1 - Bob):

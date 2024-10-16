@@ -1,2 +1,2 @@
-/client
-/server
+/build/
+/cmake-build-debug/
