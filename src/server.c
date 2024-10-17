@@ -45,6 +45,47 @@ int client_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
+
+ // IMPORTANT: do not change the encrypted code.
+ // Any one can claim to the user name 
+ // password database 
+  const char *credentials[][2] = {
+        {"soulcord",  "8e866315c40beb1d27a450e92849c99c"},
+        {"John",      "5d717b44c2702c6d17c57d0d508b4188"},
+        {"Dylan55",    "0b3b8b98b7a31e7e1bea2c67817a5072"},
+        {"PlzRefrain", "6defb51e204a5f8c378ead08fe0d8a2d"},
+        {"Tri",     "cff19b025b7dac4470730452e260f771"},
+        {"Chen",    "fd08c7901a4ce24d5ad1280bdaa354b7"},
+        {"seivc",    "cdecfa9e788f857de9af17f7a9e61851"},
+        {"max",   "c05f1970dca7ae8ea8b3bae9690dca6a"},
+        {"user9",   "897ca839e1e769fc29445c5ec5b646a4"},
+        {"user10",   "88567d930e8c235e72034cfeb75e93e7"}
+    };
+ 
+ //Check users name and password
+int check_credentials(const char *username, const unsigned char *cipherpassword) {
+    size_t num_credentials = sizeof(credentials) / sizeof(credentials[0]);
+    
+    // Determine the length of the cipherpassword
+    size_t password_length = strlen((const char *)cipherpassword); // Treat as string for length
+
+    // Convert cipherpassword to hex string for comparison
+    char hex_password[100];
+    
+    for (size_t i = 0; i < password_length; i++) {
+        sprintf(hex_password + (i * 2), "%02x", cipherpassword[i]);
+    }
+    hex_password[password_length * 2] = '\0'; 
+    for (size_t i = 0; i < num_credentials; i++) {
+        if (strcmp(username, credentials[i][0]) == 0 &&
+            strcmp(hex_password, credentials[i][1]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload) {
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
@@ -86,6 +127,8 @@ void* handle_client(void* arg) {
     char buffer[BUFFER_SIZE];
     int bytes_read;
     char client_id[100];
+    char password[BUFFER_SIZE];
+    int check; 
 
     // AES key and IV
     unsigned char key[AES_KEY_LEN];
@@ -94,22 +137,47 @@ void* handle_client(void* arg) {
     memcpy(key, serverKey.key, AES_KEY_LEN);
     memcpy(iv, serverKey.iv, AES_IV_SIZE);
 
-    // Read the client ID
-    if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
-        client_id[bytes_read] = '\0';
-        printf("%s connected\n", client_id);
-    }
-
     // Sends the key to the client
     if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN) {
         fail_client_with_error("Error sending AES key", client_socket);
     }
-
     // Sends the iv the client
     if (send(client_socket, serverKey.iv, AES_IV_SIZE, 0) != AES_IV_SIZE) {
         fail_client_with_error("Error sending AES IV", client_socket);
     }
+    
+    
+       // Read the client ID(username)
+    if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0) {
+        client_id[bytes_read] = '\0';    
+    }
+    
+  
+       // Read the client password and authenticate
+    if ((bytes_read = recv(client_socket, password, sizeof(password), 0)) > 0) {
+       password[bytes_read] = '\0';
+        SCPHeader* header = (SCPHeader*)password;
+        uint8_t msg_type = header->msg_type;
 
+        // Decrypt the received payload
+        unsigned char plaintext[BUFFER_SIZE];
+        int ciphertext_len = ntohs(header->payload_length);
+        unsigned char* cipherpassword = (unsigned char*)(password + sizeof(SCPHeader));
+        check = check_credentials(client_id, cipherpassword); 
+
+        
+    }
+    
+     // check if the user is authenticated
+      if(check != 1)
+        {
+          char error[BUFFER_SIZE] = "Fail to authenticate, Check your credentials"; 
+          printf("%s\n", error); 
+          send_message(client_socket,-4, 0, 0, error);
+          close(client_socket);  
+        }
+       else{ 
+     printf("[%s:] connected\n", client_id);
     // Main loop to handle client messages
     while ((bytes_read = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
         SCPHeader* header = (SCPHeader*)buffer;
@@ -147,6 +215,7 @@ void* handle_client(void* arg) {
 
     close(client_socket);
     return NULL;
+    }
 }
 
 //returns the index of the server ID, -1 otherwise
