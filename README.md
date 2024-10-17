@@ -13,87 +13,62 @@ This project implements a Simple Chat Protocol (SCP) for real-time text-based co
 
 ## Files
 
-- `server.c`: The server program that listens for incoming connections and handles multiple clients.
-- `client.c`: The client program that connects to the server and exchanges messages.
+- `client.Dockerfile`: Dockerfile for the client program.
+- `server.Dockerfile`: Dockerfile for the server program.
+- `docker-compose.yml`: Docker Compose file for running the client and server containers.
+- `CMakeLists.txt`: CMake configuration file for building the project.
+- `README.md`: Project documentation.
+- `src`: Directory containing the source code files.
+  - `client.c`: The client program that connects to the server and exchanges messages.
+  - `server.c`: The server program that listens for incoming connections and handles multiple clients.
+  - `common`: Code & headers shared between the server & client.
 
 ## Developing with Docker
-## Client
-
-With compose: `docker compose run --build client`
+### Client
+With compose: `docker compose run --rm --build client`
 Or without: `docker run --rm -it $(docker build -q -f client.Dockerfile .)`
 
-## Server
-
-With compose: `docker compose run --build --name mytestserver server`
+### Server
+With compose: `docker compose run --rm --build --name mytestserver server`
 Or without: `docker run --name mytestserver --rm -it $(docker build -q -f server.Dockerfile .)`
 
 In both examples, `mytestserver` is the hostname (domain) of the running server container, accessible from other containers.
-
-## Local development
-### Prerequisites
-
-- GCC compiler.
-  - Ubuntu: `sudo apt install build-essential`
-- POSIX-compliant operating system (e.g., Linux, macOS).
-
-### Compilation
-
-#### Install OpenSSL
-Macos: `brew install openssl`
-Ubuntu: `sudo apt install libssl-dev`
-
-#### Check the installation path (macos only)
-brew --prefix openssl   
-Ex: /opt/homebrew/opt/openssl@3
-
-#### Server
-
-To compile the server program, open a terminal and run:
-
-Macos:
-```sh
-gcc server.c -o server -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
-```
-To find ther Server IP:
-Run this: ``docker inspect mytestserver``
-
-and look for this
+To find the Server IP, run `docker inspect mytestserver` & look for this
+```json
  "Networks": {
                 "cs4389-chat-project_chat-network": {
                     "IPAddress": "xxx.xx.x.x",
                 }
               }
+```
 
-Ubuntu
+## Developing with Cmake
+### Prerequisites
+
+- GCC compiler.
+  - Ubuntu: `sudo apt install build-essential`
+  - Macos: `xcode-select --install`
+- Cmake
+  - Ubuntu: `sudo apt install cmake`
+  - Macos: `brew install cmake`
+- OpenSSL library.
+  - Ubuntu: `sudo apt install libssl-dev`
+  - Macos: `brew install openssl`
+- POSIX-compliant operating system (e.g., Linux, macOS).
+
+### Compilation
+Configure the project using CMake & compile the source files:
 ```bash
-gcc server.c -o server -lssl -lcrypto -pthread
+cmake -B build -S . && cmake --build build
 ```
 
-#### Client
+### Running
+- `./build/server` to run the server.
+- `./build/client` to run the client.
 
-To compile the client program, open a terminal and run:
 
-Macos:
-```sh
-# gcc client.c -o client.out -lpthread
-gcc client.c -o client -I/{installation_path}/include -L/{installation_path}/lib -lssl -lcrypto -pthread
-```
-
-Ubuntu
-```bash
-gcc client.c -o client -lssl -lcrypto -pthread
-```
-
-### Execution
-
-#### Running the Server
-
-To run the server program, execute the following command in the terminal:
-
-```sh
-./server.out
-```
-
+## Usage
+### Server
 You will be prompted to enter a port number and a server ID. The default port is `4390`, and the default server ID is `default_server`.
 
 Example output:
@@ -130,14 +105,7 @@ Decrypted message([Bob]): Goodbye
 Received GOODBYE from client
 ```
 
-### Running the Client
-
-To run the client program, execute the following command in the terminal:
-
-```sh
-./client.out
-```
-
+### Client
 You will be prompted to enter the server address, port number, and connection ID. The default server address is `127.0.0.1` (localhost), and the default port is `4390`.
 
 Example output (Client 1 - Bob):
@@ -207,6 +175,7 @@ Encrypted message: cc20fb1775bca0c6334046891f2155c1
 
 - Ensure the server is running before starting the client.
 - Ensure at least two clients are running, so you can chat between them. The clients will be able to see each other's messages, and the server will see the messages and acknowledgments from the client.
-- To exit a client, type "exit" as your message. This will send a GOODBYE message to the server, wait for the GOODBYE_ACK, and then close the connection.
+- To exit a client, type ".exit" as your message. This will send a GOODBYE message to the server, wait for the
+  GOODBYE_ACK, and then close the connection.
 - The server sends a MESSAGE_ACK for each message received from a client, which is displayed as "Message delivered" on the client side.
 - When a client sends a GOODBYE message, the server responds with a GOODBYE_ACK, which is displayed as "Goodbye acknowledged" on the client side before the connection is closed.

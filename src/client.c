@@ -8,76 +8,23 @@
 #include <pthread.h>
 #include <openssl/evp.h>
 #include <openssl/aes.h>
-#include <openssl/rand.h>
+
+#include "common/crypto.h"
+#include "common/prompt.h"
+#include "common/proto.h"
 
 #define BUFFER_SIZE 1024
-#define AES_KEY_LEN 32
-#define AES_IV_SIZE 16
-
-// Define the structure for the Simple Chat Protocol (SCP) header
-typedef struct {
-    uint8_t version;
-    uint8_t msg_type;
-    uint16_t seq_num;
-    uint32_t timestamp;
-    uint32_t sender_id;
-    uint32_t recipient_id;
-    uint16_t payload_length;
-} SCPHeader;
 
 // 32-byte AES key
-unsigned char key[AES_KEY_LEN];  
+unsigned char key[AES_KEY_LEN];
 
 // 16-byte AES IV
 unsigned char iv[AES_IV_SIZE];
 
-//Function to encrypt the message
-int aes_encrypt(const unsigned char *plaintext, int plaintext_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
-    EVP_CIPHER_CTX *ctx;
-    int len;
-    int ciphertext_len;
-
-    //Create and initialize context
-    if (!(ctx = EVP_CIPHER_CTX_new())) {
-        perror("Failed to create context");
-        return -1;
-    }
-
-    //Initialize encryption operation with AES-256
-    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
-        perror("Failed to initialize encryption operation");
-        return -1;
-    }
-
-    //Provide the message to be encrypted
-    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
-        perror("Failed to encrypt message");
-        return -1;
-    }
-    ciphertext_len = len;
-
-    //Finalize the encryption
-    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
-        return -1;
-    }
-    ciphertext_len += len;
-
-    EVP_CIPHER_CTX_free(ctx);
-
-    return ciphertext_len;
-}
-
-
-
 // Function to send a message using the SCP protocol
-void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload, unsigned char* key, unsigned char* iv) {
-    SCPHeader header;
-    header.version = 1;
-    header.msg_type = msg_type;
-    header.seq_num = htons(rand() % 65536);  // Generate random sequence number
-    header.timestamp = htonl(time(NULL));    // Current timestamp
-    header.sender_id = htonl(sender_id);
-    header.recipient_id = htonl(recipient_id);
+void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload,
+                  unsigned char* key, unsigned char* iv) {
+    SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Encrypt the payload
     unsigned char ciphertext[BUFFER_SIZE];
@@ -103,7 +50,6 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 }
 
 
-
 // Thread function to receive messages
 void* receive_messages(void* socket_desc) {
     int sock = *(int*)socket_desc;
@@ -111,19 +57,21 @@ void* receive_messages(void* socket_desc) {
     int bytes_read;
 
     while ((bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
-        SCPHeader* header = (SCPHeader*) buffer;
+        SCPHeader* header = (SCPHeader*)buffer;
         char* message = buffer + sizeof(SCPHeader);
-        message[ntohs(header->payload_length)] = '\0';  // Null-terminate the message
+        message[ntohs(header->payload_length)] = '\0'; // Null-terminate the message
 
         // Display the received message with timestamp
         time_t now = time(NULL);
-        struct tm *t = localtime(&now);
+        struct tm* t = localtime(&now);
 
-        if (header->msg_type == 2) {  // MESSAGE_ACK
+        if (header->msg_type == 2) {
+            // MESSAGE_ACK
             printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
-        } else if (header->msg_type == 4) {  // GOODBYE_ACK
+        } else if (header->msg_type == 4) {
+            // GOODBYE_ACK
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
-            break;  // Exit the receive loop
+            break; // Exit the receive loop
         } else {
             printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, message);
         }
@@ -135,19 +83,16 @@ void* receive_messages(void* socket_desc) {
 }
 
 int main() {
-    char server_address[100] = "server";  // Default localhost address
-    int port = 4390;  // Default port
-    char type[10];
+    char type[10] = "ip";
+    char server_address[100] = "127.0.0.1"; // Default localhost address
+    int port = 4390; // Default port
 
     // Get server connection details from user
-    printf("Is the server address an IP or domain? (ip/domain): ");
-    scanf("%s", type);
+    prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
 
-    printf("Enter server address (default %s): ", server_address);
-    scanf("%s", server_address);
+    prompt_user("Enter server address", "%s", server_address);
 
-    printf("Enter port (default %d): ", port);
-    scanf("%d", &port);
+    prompt_user("Enter port", "%d", &port);
 
     int sock = 0;
     struct sockaddr_in serv_addr;
@@ -164,8 +109,8 @@ int main() {
 
     // Handle domain name resolution if needed
     if (strcmp(type, "domain") == 0) {
-        struct hostent *he;
-        struct in_addr **addr_list;
+        struct hostent* he;
+        struct in_addr** addr_list;
 
         // Resolve the server address (domain)
         if ((he = gethostbyname(server_address)) == NULL) {
@@ -173,7 +118,7 @@ int main() {
             return -1;
         }
 
-        addr_list = (struct in_addr **)he->h_addr_list;
+        addr_list = (struct in_addr**)he->h_addr_list;
         if (addr_list[0] != NULL) {
             serv_addr.sin_addr = *addr_list[0];
         } else {
@@ -189,7 +134,7 @@ int main() {
     }
 
     // Connect to the server
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("Connection failed");
         return -1;
     }
@@ -199,8 +144,8 @@ int main() {
     printf("Enter connection ID: ");
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
-    getchar();  // Consume the newline character left by scanf
-    
+    getchar(); // Consume the newline character left by scanf
+
     // reads the iv sent from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
         perror("Error reading AES key");
@@ -220,15 +165,25 @@ int main() {
         return -1;
     }
 
+    printf("Connected, use .help for command help\n");
+
     // Main loop for sending messages
     while (1) {
         printf("Enter message: ");
         fgets(buffer, BUFFER_SIZE, stdin);
         buffer[strcspn(buffer, "\n")] = 0; // Remove trailing newline
 
-        if (strcmp(buffer, "exit") == 0) {
-            send_message(sock, 3, 1, 2, "Goodbye", key, iv);
-            break;
+        if (buffer[0] == '.') {
+            char* command = buffer + 1; // Skip the dot
+            if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0) {
+                send_message(sock, 3, 1, 2, "Goodbye", key, iv);
+            } else if (strcmp(command, "help") == 0) {
+                printf("Available commands:\n");
+                printf(".exit, . - Disconnect from the server\n");
+                printf(".help - Show this help message\n");
+            } else {
+                printf("Unknown command: %s, try .help?\n", command);
+            }
         } else {
             send_message(sock, 1, 1, 2, buffer, key, iv);
         }
