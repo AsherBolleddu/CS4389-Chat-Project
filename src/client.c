@@ -177,6 +177,7 @@ int main() {
             char* command = buffer + 1; // Skip the dot
             if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0) {
                 send_message(sock, 3, 1, 2, "Goodbye", key, iv);
+                break;
             } else if (strcmp(command, "help") == 0) {
                 printf("Available commands:\n");
                 printf(".exit, . - Disconnect from the server\n");
