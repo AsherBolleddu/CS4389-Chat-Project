@@ -21,6 +21,9 @@ unsigned char key[AES_KEY_LEN];
 // 16-byte AES IV
 unsigned char iv[AES_IV_SIZE];
 
+// Global flag for exit condition
+volatile int should_exit = 0;
+
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload,
                   unsigned char* key, unsigned char* iv) {
@@ -49,17 +52,28 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     send(sock, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
 }
 
-
 // Thread function to receive messages
 void* receive_messages(void* socket_desc) {
     int sock = *(int*)socket_desc;
     char buffer[BUFFER_SIZE];
     int bytes_read;
 
-    while ((bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
+    while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
         SCPHeader* header = (SCPHeader*)buffer;
-        char* message = buffer + sizeof(SCPHeader);
-        message[ntohs(header->payload_length)] = '\0'; // Null-terminate the message
+        unsigned char decrypted_message[BUFFER_SIZE];
+        int plaintext_len;
+        
+        // Decrypt the message if it has a payload
+        if (ntohs(header->payload_length) > 0) {
+            plaintext_len = aes_decrypt(
+                (unsigned char*)(buffer + sizeof(SCPHeader)),
+                ntohs(header->payload_length),
+                key,
+                iv,
+                decrypted_message
+            );
+            decrypted_message[plaintext_len] = '\0';
+        }
 
         // Display the received message with timestamp
         time_t now = time(NULL);
@@ -71,9 +85,10 @@ void* receive_messages(void* socket_desc) {
         } else if (header->msg_type == 4) {
             // GOODBYE_ACK
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
-            break; // Exit the receive loop
+            should_exit = 1;
+            break;
         } else {
-            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, message);
+            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
         }
         printf("Enter message: ");
         fflush(stdout);
@@ -84,14 +99,12 @@ void* receive_messages(void* socket_desc) {
 
 int main() {
     char type[10] = "ip";
-    char server_address[100] = "127.0.0.1"; // Default localhost address
-    int port = 4390; // Default port
+    char server_address[100] = "127.0.0.1";
+    int port = 4390;
 
     // Get server connection details from user
     prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
-
     prompt_user("Enter server address", "%s", server_address);
-
     prompt_user("Enter port", "%d", &port);
 
     int sock = 0;
@@ -112,7 +125,6 @@ int main() {
         struct hostent* he;
         struct in_addr** addr_list;
 
-        // Resolve the server address (domain)
         if ((he = gethostbyname(server_address)) == NULL) {
             perror("gethostbyname error");
             return -1;
@@ -126,14 +138,12 @@ int main() {
             return -1;
         }
     } else {
-        // Convert IP address from text to binary form
         if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0) {
             perror("Invalid address/Address not supported");
             return -1;
         }
     }
 
-    // Connect to the server
     if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("Connection failed");
         return -1;
@@ -144,21 +154,20 @@ int main() {
     printf("Enter connection ID: ");
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
-    getchar(); // Consume the newline character left by scanf
+    getchar(); // Consume newline
 
-    // reads the iv sent from server
+    // Read encryption keys from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
         perror("Error reading AES key");
         exit(EXIT_FAILURE);
     }
 
-    // reads the iv sent from server
     if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE) {
         perror("Error reading AES IV");
         exit(EXIT_FAILURE);
     }
 
-    // Create a thread to handle incoming messages
+    // Create receive thread
     pthread_t recv_thread;
     if (pthread_create(&recv_thread, NULL, receive_messages, (void*)&sock) < 0) {
         perror("Could not create receive thread");
@@ -167,16 +176,18 @@ int main() {
 
     printf("Connected, use .help for command help\n");
 
-    // Main loop for sending messages
-    while (1) {
+    // Main message loop
+    while (!should_exit) {
         printf("Enter message: ");
         fgets(buffer, BUFFER_SIZE, stdin);
-        buffer[strcspn(buffer, "\n")] = 0; // Remove trailing newline
+        buffer[strcspn(buffer, "\n")] = 0;
 
         if (buffer[0] == '.') {
-            char* command = buffer + 1; // Skip the dot
+            char* command = buffer + 1;
             if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0) {
                 send_message(sock, 3, 1, 2, "Goodbye", key, iv);
+                should_exit = 1;
+                break;
             } else if (strcmp(command, "help") == 0) {
                 printf("Available commands:\n");
                 printf(".exit, . - Disconnect from the server\n");
@@ -184,16 +195,15 @@ int main() {
             } else {
                 printf("Unknown command: %s, try .help?\n", command);
             }
-        } else {
+        } else if (strlen(buffer) > 0) {
             send_message(sock, 1, 1, 2, buffer, key, iv);
         }
 
         memset(buffer, 0, BUFFER_SIZE);
     }
 
-    // Wait for the GOODBYE_ACK
+    // Wait for receive thread to finish
     pthread_join(recv_thread, NULL);
-
     close(sock);
     return 0;
 }
