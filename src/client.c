@@ -97,6 +97,32 @@ void* receive_messages(void* socket_desc) {
     return NULL;
 }
 
+//login functionality
+void user_login(int sock)
+{
+
+    //need to update to shared key with server
+    unsigned char key[32] = "01234567890123456789012345678901";  // Example 32-byte AES key
+    unsigned char iv[16] = "0123456789012345";                   // Example 16-byte AES IV
+    
+    
+    // Send client ID to server
+    char client_id[100];
+    printf("Enter user name: "); 
+    scanf("%s", client_id);
+    send(sock, client_id, strlen(client_id), 0);
+    getchar(); // Consume the newline character left by scanf
+    
+    //sending password to the server for authentication
+    char password[BUFFER_SIZE]; 
+    printf("Enter password: ");
+    fgets(password, BUFFER_SIZE, stdin);
+    password[strcspn(password, "\n")] = 0;
+    // send encrypted password to server
+    send_message(sock, 1, 1, 2, password, key, iv);
+}
+
+
 int main() {
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
@@ -149,12 +175,9 @@ int main() {
         return -1;
     }
 
-    // Send client ID to server
-    char client_id[100];
-    printf("Enter connection ID: ");
-    scanf("%s", client_id);
-    send(sock, client_id, strlen(client_id), 0);
-    getchar(); // Consume newline
+    //user login
+    user_login(sock); 
+
 
     // Read encryption keys from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
