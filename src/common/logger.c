@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdarg.h>
 #include "logger.h"
 
 FILE *log_file = NULL;
@@ -13,12 +14,17 @@ void init_logger(const char *filename) {
     }
 }
 
-void log_message(const char *message) {
+void log_info(const char *format, ...) { // Change to log_info
     if (log_file) {
+        va_list args;
+        va_start(args, format);
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
-        fprintf(log_file, "[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, message);
-        fflush(log_file); // Ensure the message is written immediately
+        fprintf(log_file, "[%02d:%02d:%02d] ", t->tm_hour, t->tm_min, t->tm_sec);
+        vfprintf(log_file, format, args); // Use vfprintf for formatted output
+        fprintf(log_file, "\n");
+        fflush(log_file);
+        va_end(args);
     }
 }
 
@@ -28,3 +34,4 @@ void close_logger() {
         log_file = NULL;
     }
 }
+
