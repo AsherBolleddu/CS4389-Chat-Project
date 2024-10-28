@@ -40,9 +40,17 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     memcpy(buffer, &header, sizeof(SCPHeader));
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
-    // Log the original and encrypted message
-    printf("Original message: %s\n", payload);
-    printf("Encrypted message: ");
+    // Only log non-sensitive messages (not passwords)
+    if (msg_type != 1 || strncmp(payload, "pass", 4) != 0) {
+        printf("Original message: %s\n", payload);
+    }
+    
+    // Print appropriate encryption label based on whether it's a password
+    if (msg_type == 1 && strncmp(payload, "pass", 4) == 0) {
+        printf("Encrypted password: ");
+    } else {
+        printf("Encrypted message: ");
+    }
     for (int i = 0; i < ciphertext_len; i++) {
         printf("%02x", ciphertext[i]);
     }
@@ -100,11 +108,9 @@ void* receive_messages(void* socket_desc) {
 //login functionality
 void user_login(int sock)
 {
-
     //need to update to shared key with server
     unsigned char key[32] = "01234567890123456789012345678901";  // Example 32-byte AES key
     unsigned char iv[16] = "0123456789012345";                   // Example 16-byte AES IV
-    
     
     // Send client ID to server
     char client_id[100];
@@ -121,7 +127,6 @@ void user_login(int sock)
     // send encrypted password to server
     send_message(sock, 1, 1, 2, password, key, iv);
 }
-
 
 int main() {
     char type[10] = "ip";
@@ -177,7 +182,6 @@ int main() {
 
     //user login
     user_login(sock); 
-
 
     // Read encryption keys from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
