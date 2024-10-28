@@ -12,6 +12,7 @@
 #include "common/crypto.h"
 #include "common/prompt.h"
 #include "common/proto.h"
+#include "logger.h"
 
 #define BUFFER_SIZE 1024
 
@@ -34,6 +35,10 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     int ciphertext_len = aes_encrypt((unsigned char*)payload, strlen(payload), key, iv, ciphertext);
 
     header.payload_length = htons(ciphertext_len);
+    
+    // Log the sent message
+    log_info("Sent message:");
+    log_info(payload);  // Log the payload being sent
 
     // Prepare the buffer with header and encrypted payload
     char buffer[BUFFER_SIZE];
@@ -82,6 +87,10 @@ void* receive_messages(void* socket_desc) {
             );
             decrypted_message[plaintext_len] = '\0';
         }
+        
+       // Log received message
+        log_info("Received message from server:");  // **Log message reception**
+        log_info(decrypted_message);  // **Log the decrypted message**
 
         // Display the received message with timestamp
         time_t now = time(NULL);
@@ -118,13 +127,15 @@ void user_login(int sock)
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
     getchar(); // Consume the newline character left by scanf
-    
+    log_info("Sent client ID to server.");  // **Log client ID sent**
+
     //sending password to the server for authentication
     char password[BUFFER_SIZE]; 
     printf("Enter password: ");
     fgets(password, BUFFER_SIZE, stdin);
     password[strcspn(password, "\n")] = 0;
     // send encrypted password to server
+    log_info("Sent password for authentication.");  // Log password been sent
     send_message(sock, 1, 1, 2, password, key, iv);
 }
 
@@ -132,6 +143,9 @@ int main() {
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
     int port = 4390;
+
+    // Log Connection setup...
+    log_info("Attempting to connect to server.");  // **Log connection attempt**
 
     // Get server connection details from user
     prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
@@ -142,12 +156,11 @@ int main() {
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE] = {0};
 
-    // Create socket
+   // Create socket
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
         return -1;
     }
-
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
@@ -179,7 +192,8 @@ int main() {
         perror("Connection failed");
         return -1;
     }
-
+    // After successful connection
+    log_info("Connected to server.");  // **Log successful connection**
     //user login
     user_login(sock); 
 
@@ -202,6 +216,7 @@ int main() {
     }
 
     printf("Connected, use .help for command help\n");
+  
 
     // Main message loop
     while (!should_exit) {
