@@ -201,6 +201,8 @@ void* handle_client(void* arg) {
             printf("%02x", ciphertext[i]);
         }
         printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
+        log_info("Received message from client:");
+        log_info(plaintext);  // Log the decrypted plaintext
 
         if (msg_type == 1) {  // MESSAGE
             printf("Received MESSAGE from client\n");
@@ -253,7 +255,7 @@ void* handle_client(void* arg) {
         }
     }
     pthread_mutex_unlock(&clients_mutex);
-
+    log_info("Client disconnected.");  // Log client disconnection
     close(client_socket);
     return NULL;
 }
@@ -304,6 +306,7 @@ int main() {
 
     while ((new_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen)) >= 0) {
         printf("New connection established\n");
+        log_info("New client connected.");  // Log new client connection
         client_socket = malloc(sizeof(int));
         *client_socket = new_socket;
         pthread_create(&tid, NULL, handle_client, (void*)client_socket);
