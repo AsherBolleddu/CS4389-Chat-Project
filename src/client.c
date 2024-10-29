@@ -10,6 +10,7 @@
 #include <openssl/aes.h>
 
 #include "common/crypto.h"
+#include "common/logger.h"
 #include "common/prompt.h"
 #include "common/proto.h"
 
@@ -23,17 +24,16 @@ unsigned char iv[AES_IV_SIZE];
 
 // Global flag for exit condition
 volatile int should_exit = 0;
-volatile int authenticated = 0;  // New flag to track authentication status
+volatile int authenticated = 0; // New flag to track authentication status
 
 // Function to send a message using the SCP protocol
-void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char *payload,
-                  unsigned char *key, unsigned char *iv)
-{
+void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload,
+                  unsigned char* key, unsigned char* iv) {
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Encrypt the payload
     unsigned char ciphertext[BUFFER_SIZE];
-    int ciphertext_len = aes_encrypt((unsigned char *)payload, strlen(payload), key, iv, ciphertext);
+    int ciphertext_len = aes_encrypt((unsigned char*)payload, strlen(payload), key, iv, ciphertext);
 
     header.payload_length = htons(ciphertext_len);
 
@@ -43,15 +43,15 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
     // Only show debug info for regular chat messages if authenticated
-    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0)
-    {
-        printf("Original message: %s\n", payload);
-        printf("Encrypted message: ");
-        for (int i = 0; i < ciphertext_len; i++)
-        {
-            printf("%02x", ciphertext[i]);
+    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0) {
+        log_info("Original message: %s", payload);
+
+        char encrypted_message[3 * ciphertext_len + 1];
+        char* ptr = encrypted_message;
+        for (int i = 0; i < ciphertext_len; i++) {
+            ptr += sprintf(ptr, "%02x", ciphertext[i]);
         }
-        printf("\n");
+        log_info("Encrypted message: %s", encrypted_message);
     }
 
     // Send the message
@@ -59,23 +59,20 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 }
 
 // Thread function to receive messages
-void *receive_messages(void *socket_desc)
-{
-    int sock = *(int *)socket_desc;
+void* receive_messages(void* socket_desc) {
+    int sock = *(int*)socket_desc;
     char buffer[BUFFER_SIZE];
     int bytes_read;
 
-    while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0)
-    {
-        SCPHeader *header = (SCPHeader *)buffer;
+    while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
+        SCPHeader* header = (SCPHeader*)buffer;
         unsigned char decrypted_message[BUFFER_SIZE];
         int plaintext_len;
 
         // Decrypt the message if it has a payload
-        if (ntohs(header->payload_length) > 0)
-        {
+        if (ntohs(header->payload_length) > 0) {
             plaintext_len = aes_decrypt(
-                (unsigned char *)(buffer + sizeof(SCPHeader)),
+                (unsigned char*)(buffer + sizeof(SCPHeader)),
                 ntohs(header->payload_length),
                 key,
                 iv,
@@ -85,30 +82,25 @@ void *receive_messages(void *socket_desc)
 
         // Display the received message with timestamp
         time_t now = time(NULL);
-        struct tm *t = localtime(&now);
+        struct tm* t = localtime(&now);
 
-        if (header->msg_type == 2)
-        {
+        if (header->msg_type == 2) {
             // MESSAGE_ACK
-            printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
-        }
-        else if (header->msg_type == 4)
-        {
+            log_info_cr("Server: Message delivered");
+        } else if (header->msg_type == 4) {
             // GOODBYE_ACK
-            printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
+            log_info_cr("Server: Goodbye acknowledged");
             should_exit = 1;
             break;
+        } else {
+            log_info_cr("%s", decrypted_message);
         }
-        else
-        {
-            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
-        }
-        printf("Enter message: ");
+        log_info_noline("Enter message: ");
         fflush(stdout);
     }
 
     if (bytes_read <= 0 && !should_exit && !authenticated) {
-        printf("\rError: Failed to authenticate\n");
+        log_info("Error: Failed to authenticate");
         should_exit = 1;
     }
 
@@ -116,31 +108,31 @@ void *receive_messages(void *socket_desc)
 }
 
 // login functionality
-void user_login(int sock)
-{
+void user_login(int sock) {
     // need to update to shared key with server
     unsigned char key[32] = "01234567890123456789012345678901"; // Example 32-byte AES key
-    unsigned char iv[16] = "0123456789012345";                  // Example 16-byte AES IV
+    unsigned char iv[16] = "0123456789012345"; // Example 16-byte AES IV
 
     // Send client ID to server
     char client_id[100];
-    printf("Enter user name: ");
+    log_info_noline("Enter user name: ");
     scanf("%s", client_id);
     send(sock, client_id, strlen(client_id), 0);
     getchar(); // Consume the newline character left by scanf
 
     // sending password to the server for authentication
     char password[BUFFER_SIZE];
-    printf("Enter password: ");
+    log_info_noline("Enter password: ");
     fgets(password, BUFFER_SIZE, stdin);
     password[strcspn(password, "\n")] = 0;
-    
+
     // Send encrypted password to server without displaying debug info
     send_message(sock, 1, 1, 2, password, key, iv);
 }
 
-int main()
-{
+int main() {
+    init_logger("cilent.log");
+
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
     int port = 4390;
@@ -155,8 +147,7 @@ int main()
     char buffer[BUFFER_SIZE] = {0};
 
     // Create socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    {
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
         return -1;
     }
@@ -165,39 +156,30 @@ int main()
     serv_addr.sin_port = htons(port);
 
     // Handle domain name resolution if needed
-    if (strcmp(type, "domain") == 0)
-    {
-        struct hostent *he;
-        struct in_addr **addr_list;
+    if (strcmp(type, "domain") == 0) {
+        struct hostent* he;
+        struct in_addr** addr_list;
 
-        if ((he = gethostbyname(server_address)) == NULL)
-        {
+        if ((he = gethostbyname(server_address)) == NULL) {
             perror("gethostbyname error");
             return -1;
         }
 
-        addr_list = (struct in_addr **)he->h_addr_list;
-        if (addr_list[0] != NULL)
-        {
+        addr_list = (struct in_addr**)he->h_addr_list;
+        if (addr_list[0] != NULL) {
             serv_addr.sin_addr = *addr_list[0];
-        }
-        else
-        {
+        } else {
             perror("No valid address found");
             return -1;
         }
-    }
-    else
-    {
-        if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0)
-        {
+    } else {
+        if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0) {
             perror("Invalid address/Address not supported");
             return -1;
         }
     }
 
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("Connection failed");
         return -1;
     }
@@ -206,16 +188,14 @@ int main()
     user_login(sock);
 
     // Read encryption keys from server
-    if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN)
-    {
-        printf("Error: Failed to authenticate\n");
+    if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN) {
+        log_info("Error: Failed to authenticate");
         close(sock);
         return -1;
     }
 
-    if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE)
-    {
-        printf("Error: Failed to authenticate\n");
+    if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE) {
+        log_info("Error: Failed to authenticate");
         close(sock);
         return -1;
     }
@@ -225,43 +205,33 @@ int main()
 
     // Create receive thread
     pthread_t recv_thread;
-    if (pthread_create(&recv_thread, NULL, receive_messages, (void *)&sock) < 0)
-    {
+    if (pthread_create(&recv_thread, NULL, receive_messages, (void*)&sock) < 0) {
         perror("Could not create receive thread");
         return -1;
     }
 
-    printf("Connected, use .help for command help\n");
+    log_info("Connected, use .help for command help");
 
     // Main message loop
-    while (!should_exit)
-    {
-        printf("Enter message: ");
+    while (!should_exit) {
+        log_info_noline("Enter message: ");
         fgets(buffer, BUFFER_SIZE, stdin);
         buffer[strcspn(buffer, "\n")] = 0;
 
-        if (buffer[0] == '.')
-        {
-            char *command = buffer + 1;
-            if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0)
-            {
+        if (buffer[0] == '.') {
+            char* command = buffer + 1;
+            if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0) {
                 send_message(sock, 3, 1, 2, "Goodbye", key, iv);
                 should_exit = 1;
                 break;
+            } else if (strcmp(command, "help") == 0) {
+                log_info("Available commands:");
+                log_info(".exit, . - Disconnect from the server");
+                log_info(".help - Show this help message");
+            } else {
+                log_info("Unknown command: %s, try .help?", command);
             }
-            else if (strcmp(command, "help") == 0)
-            {
-                printf("Available commands:\n");
-                printf(".exit, . - Disconnect from the server\n");
-                printf(".help - Show this help message\n");
-            }
-            else
-            {
-                printf("Unknown command: %s, try .help?\n", command);
-            }
-        }
-        else if (strlen(buffer) > 0)
-        {
+        } else if (strlen(buffer) > 0) {
             send_message(sock, 1, 1, 2, buffer, key, iv);
         }
 

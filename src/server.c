@@ -10,6 +10,7 @@
 #include "common/crypto.h"
 #include "common/prompt.h"
 #include "common/proto.h"
+#include "common/logger.h"
 
 #define SERVER_ID_ARR_SIZE 4
 #define NUM_KEYS 4
@@ -112,7 +113,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const unsigned 
             memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
             send(clients[i].socket, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
-            printf("Broadcasted message to %s\n", clients[i].id);
+            log_info("Broadcasted message to %s", clients[i].id);
         }
     }
 
@@ -120,7 +121,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const unsigned 
 }
 
 void fail_client_with_error(const char* error_msg, int client_socket) {
-    printf("%s\n", error_msg);
+    log_info("Fail client %d: %s", client_socket, error_msg);
     close(client_socket);
     pthread_exit(NULL);
 }
@@ -158,7 +159,7 @@ void* handle_client(void* arg) {
         fail_client_with_error(error, client_socket);
     }
 
-    printf("%s connected\n", client_id);
+    log_info("%s connected", client_id);
 
     // Add client to array with their keys
     pthread_mutex_lock(&clients_mutex);
@@ -194,15 +195,15 @@ void* handle_client(void* arg) {
         plaintext[plaintext_len] = '\0';
 
         // Log the received and decrypted message
-        printf("Received encrypted message: ");
+        log_info("Received encrypted message: ");
         for (int i = 0; i < ciphertext_len; i++) {
-            printf("%02x", ciphertext[i]);
+            log_info("%02x", ciphertext[i]);
         }
-        printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
+        log_info("Decrypted message(%s): %s", client_id, plaintext);
 
         if (msg_type == 1) {
             // MESSAGE
-            printf("Received MESSAGE from client\n");
+            log_info("Received MESSAGE from client");
             broadcast_message(client_socket, client_id, plaintext, plaintext_len);
 
             // Send acknowledgment back to sender
@@ -221,7 +222,7 @@ void* handle_client(void* arg) {
             send(client_socket, ack_buffer, sizeof(SCPHeader) + ack_len, 0);
         } else if (msg_type == 3) {
             // GOODBYE
-            printf("Received GOODBYE from client\n");
+            log_info("Received GOODBYE from client");
             broadcast_message(client_socket, client_id, (const unsigned char*)"has left the chat", 15);
 
             // Send goodbye acknowledgment
@@ -262,6 +263,8 @@ void* handle_client(void* arg) {
 }
 
 int main() {
+    init_logger("server.log");
+
     int server_fd, new_socket, *client_socket;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
@@ -302,11 +305,11 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    printf("Server ID: %s\n", server_id);
-    printf("Server listening on port %d\n", port);
+    log_info("Server ID: %s", server_id);
+    log_info("Server listening on port %d", port);
 
     while ((new_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen)) >= 0) {
-        printf("New connection established\n");
+        log_info("New connection established");
         client_socket = malloc(sizeof(int));
         *client_socket = new_socket;
         pthread_create(&tid, NULL, handle_client, (void*)client_socket);
