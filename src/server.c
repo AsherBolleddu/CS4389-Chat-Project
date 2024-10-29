@@ -10,6 +10,7 @@
 #include "common/crypto.h"
 #include "common/prompt.h"
 #include "common/proto.h"
+#include "logger.h"  // Include logger header
 
 #define SERVER_ID_ARR_SIZE 4
 #define NUM_KEYS 4
@@ -112,7 +113,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const unsigned 
             memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
             send(clients[i].socket, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
-            printf("Broadcasted message to %s\n", clients[i].id);
+            log_info("Broadcasted message to %s\n", clients[i].id);
         }
     }
     
@@ -160,7 +161,7 @@ void* handle_client(void* arg) {
         fail_client_with_error(error, client_socket);
     }
 
-    printf("%s connected\n", client_id);
+    log_info("%s connected\n", client_id);
 
     // Add client to array with their keys
     pthread_mutex_lock(&clients_mutex);
@@ -196,16 +197,16 @@ void* handle_client(void* arg) {
         plaintext[plaintext_len] = '\0';
 
         // Log the received and decrypted message
-        printf("Received encrypted message: ");
+        log_info("Received encrypted message: ");
         for (int i = 0; i < ciphertext_len; i++) {
-            printf("%02x", ciphertext[i]);
+            log_info("%02x", ciphertext[i]);
         }
-        printf("\nDecrypted message(%s): %s\n", client_id, plaintext);
+        log_info("\nDecrypted message(%s): %s\n", client_id, plaintext);
         log_info("Received message from client:");
         log_info(plaintext);  // Log the decrypted plaintext
 
         if (msg_type == 1) {  // MESSAGE
-            printf("Received MESSAGE from client\n");
+            log_info("Received MESSAGE from client\n");
             broadcast_message(client_socket, client_id, plaintext, plaintext_len);
             
             // Send acknowledgment back to sender
@@ -222,7 +223,7 @@ void* handle_client(void* arg) {
             
             send(client_socket, ack_buffer, sizeof(SCPHeader) + ack_len, 0);
         } else if (msg_type == 3) {  // GOODBYE
-            printf("Received GOODBYE from client\n");
+            log_info("Received GOODBYE from client\n");
             broadcast_message(client_socket, client_id, (const unsigned char*)"has left the chat", 15);
             
             // Send goodbye acknowledgment
@@ -269,6 +270,9 @@ int main() {
     int port = DEFAULT_PORT;
     char server_id[100] = "admin_chat";
 
+    // Logger initialization
+    init_logger("server.log");
+
     prompt_user("Enter server port", "%d", &port);
     prompt_user("Enter server ID", "%s", server_id);
 
@@ -314,5 +318,7 @@ int main() {
     }
 
     close(server_fd);
+ // Cleanup logger before exiting
+    close_logger(); 
     return 0;
 }
