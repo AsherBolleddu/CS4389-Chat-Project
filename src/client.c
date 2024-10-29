@@ -140,6 +140,7 @@ void user_login(int sock)
 }
 
 int main() {
+    init_logger("server.log"); // Set the log file name
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
     int port = 4390;
