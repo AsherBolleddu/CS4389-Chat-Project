@@ -120,7 +120,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const unsigned 
 }
 
 void fail_client_with_error(const char* error_msg, int client_socket) {
-    perror(error_msg);
+    printf("%s\n", error_msg);
     close(client_socket);
     pthread_exit(NULL);
 }

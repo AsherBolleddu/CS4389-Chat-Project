@@ -23,6 +23,7 @@ unsigned char iv[AES_IV_SIZE];
 
 // Global flag for exit condition
 volatile int should_exit = 0;
+volatile int authenticated = 0;  // New flag to track authentication status
 
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char *payload,
@@ -41,23 +42,11 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     memcpy(buffer, &header, sizeof(SCPHeader));
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
-    // Only log non-sensitive messages (not passwords)
-    if (msg_type != 3)
+    // Only show debug info for regular chat messages if authenticated
+    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0)
     {
-        if (msg_type != 1 || strncmp(payload, "pass", 4) != 0)
-        {
-            printf("Original message: %s\n", payload);
-        }
-
-        // Print appropriate encryption label based on whether it's a password
-        if (msg_type == 1 && strncmp(payload, "pass", 4) == 0)
-        {
-            printf("Encrypted password: ");
-        }
-        else
-        {
-            printf("Encrypted message: ");
-        }
+        printf("Original message: %s\n", payload);
+        printf("Encrypted message: ");
         for (int i = 0; i < ciphertext_len; i++)
         {
             printf("%02x", ciphertext[i]);
@@ -118,6 +107,11 @@ void *receive_messages(void *socket_desc)
         fflush(stdout);
     }
 
+    if (bytes_read <= 0 && !should_exit && !authenticated) {
+        printf("\rError: Failed to authenticate\n");
+        should_exit = 1;
+    }
+
     return NULL;
 }
 
@@ -140,7 +134,8 @@ void user_login(int sock)
     printf("Enter password: ");
     fgets(password, BUFFER_SIZE, stdin);
     password[strcspn(password, "\n")] = 0;
-    // send encrypted password to server
+    
+    // Send encrypted password to server without displaying debug info
     send_message(sock, 1, 1, 2, password, key, iv);
 }
 
@@ -213,15 +208,20 @@ int main()
     // Read encryption keys from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN)
     {
-        perror("Error reading AES key");
-        exit(EXIT_FAILURE);
+        printf("Error: Failed to authenticate\n");
+        close(sock);
+        return -1;
     }
 
     if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE)
     {
-        perror("Error reading AES IV");
-        exit(EXIT_FAILURE);
+        printf("Error: Failed to authenticate\n");
+        close(sock);
+        return -1;
     }
+
+    // Set authenticated flag after successful key exchange
+    authenticated = 1;
 
     // Create receive thread
     pthread_t recv_thread;
