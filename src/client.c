@@ -8,7 +8,6 @@
 #include <pthread.h>
 #include <openssl/evp.h>
 #include <openssl/aes.h>
-
 #include "common/crypto.h"
 #include "common/prompt.h"
 #include "common/proto.h"
@@ -35,10 +34,6 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     int ciphertext_len = aes_encrypt((unsigned char*)payload, strlen(payload), key, iv, ciphertext);
 
     header.payload_length = htons(ciphertext_len);
-    
-    // Log the sent message
-    log_info("Sent message:");
-    log_info(payload);  // Log the payload being sent
 
     // Prepare the buffer with header and encrypted payload
     char buffer[BUFFER_SIZE];
@@ -47,17 +42,17 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 
     // Only log non-sensitive messages (not passwords)
     if (msg_type != 1 || strncmp(payload, "pass", 4) != 0) {
-        printf("Original message: %s\n", payload);
+        log_info("Original message: %s\n", payload);
     }
     
     // Print appropriate encryption label based on whether it's a password
     if (msg_type == 1 && strncmp(payload, "pass", 4) == 0) {
-        printf("Encrypted password: ");
+        log_info("Encrypted password: ");
     } else {
-        printf("Encrypted message: ");
+        log_info("Encrypted message: ");
     }
     for (int i = 0; i < ciphertext_len; i++) {
-        printf("%02x", ciphertext[i]);
+        log_info("%02x", ciphertext[i]);
     }
     printf("\n");
 
@@ -70,7 +65,7 @@ void* receive_messages(void* socket_desc) {
     int sock = *(int*)socket_desc;
     char buffer[BUFFER_SIZE];
     int bytes_read;
-
+  
     while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
         SCPHeader* header = (SCPHeader*)buffer;
         unsigned char decrypted_message[BUFFER_SIZE];
@@ -90,7 +85,6 @@ void* receive_messages(void* socket_desc) {
         
        // Log received message
         log_info("Received message from server:");  // **Log message reception**
-        log_info(decrypted_message);  // **Log the decrypted message**
 
         // Display the received message with timestamp
         time_t now = time(NULL);
@@ -98,13 +92,16 @@ void* receive_messages(void* socket_desc) {
 
         if (header->msg_type == 2) {
             // MESSAGE_ACK
+            log_info("Server: Message delivered");  // Log message acknowledgment
             printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
         } else if (header->msg_type == 4) {
             // GOODBYE_ACK
+            log_info("Server: Goodbye acknowledged");  // Log goodbye acknowledgment
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
             should_exit = 1;
             break;
         } else {
+            log_info("Received message: %s", decrypted_message);  // Log general message
             printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
         }
         printf("Enter message: ");
@@ -140,7 +137,7 @@ void user_login(int sock)
 }
 
 int main() {
-    init_logger("server.log"); // Set the log file name
+    init_logger("client.log"); // Set the log file name
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
     int port = 4390;
@@ -152,7 +149,10 @@ int main() {
     prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
     prompt_user("Enter server address", "%s", server_address);
     prompt_user("Enter port", "%d", &port);
-
+    
+  // Log the server address and port
+    log_info("Connecting to %s on port %d", server_address, port);
+  
     int sock = 0;
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE] = {0};
@@ -203,12 +203,14 @@ int main() {
         perror("Error reading AES key");
         exit(EXIT_FAILURE);
     }
-
+   log_info("Received AES key from server."); // Log key reception
+  
     if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE) {
         perror("Error reading AES IV");
         exit(EXIT_FAILURE);
     }
-
+    log_info("Received AES IV from server."); // Log IV reception
+  
     // Create receive thread
     pthread_t recv_thread;
     if (pthread_create(&recv_thread, NULL, receive_messages, (void*)&sock) < 0) {
@@ -239,6 +241,7 @@ int main() {
                 printf("Unknown command: %s, try .help?\n", command);
             }
         } else if (strlen(buffer) > 0) {
+            log_info("Sending message: %s", buffer); // Log message being sent
             send_message(sock, 1, 1, 2, buffer, key, iv);
         }
 
@@ -248,5 +251,7 @@ int main() {
     // Wait for receive thread to finish
     pthread_join(recv_thread, NULL);
     close(sock);
+    log_info("Disconnected from server."); // Log disconnection
+    close_logger();
     return 0;
 }
