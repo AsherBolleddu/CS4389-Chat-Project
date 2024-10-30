@@ -162,6 +162,8 @@ Encrypted message: cc20fb1775bca0c6334046891f2155c1
   - `2`: MESSAGE_ACK
   - `3`: GOODBYE
   - `4`: GOODBYE_ACK
+  - `5`: LOG_REQUEST
+  - `6`: LOG_RESPONSE
 - **Header Fields**:
   - `version` (4 bits)
   - `msg_type` (4 bits)

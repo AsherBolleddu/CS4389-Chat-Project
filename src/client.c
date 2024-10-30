@@ -14,7 +14,7 @@
 #include "common/prompt.h"
 #include "common/proto.h"
 
-#define BUFFER_SIZE 1024
+#define PAYLOAD_SIZE 131072 // 128 KB
 
 // 32-byte AES key
 unsigned char key[AES_KEY_LEN];
@@ -32,26 +32,24 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Encrypt the payload
-    unsigned char ciphertext[BUFFER_SIZE];
+    unsigned char ciphertext[PAYLOAD_SIZE];
     int ciphertext_len = aes_encrypt((unsigned char*)payload, strlen(payload), key, iv, ciphertext);
 
     header.payload_length = htons(ciphertext_len);
 
     // Prepare the buffer with header and encrypted payload
-    char buffer[BUFFER_SIZE];
+    char buffer[PAYLOAD_SIZE];
     memcpy(buffer, &header, sizeof(SCPHeader));
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
     // Only show debug info for regular chat messages if authenticated
     if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0) {
-        log_info("Original message: %s", payload);
-
         char encrypted_message[3 * ciphertext_len + 1];
         char* ptr = encrypted_message;
         for (int i = 0; i < ciphertext_len; i++) {
             ptr += sprintf(ptr, "%02x", ciphertext[i]);
         }
-        log_info("Encrypted message: %s", encrypted_message);
+        log_info("Sending encrypted message: %s", encrypted_message);
     }
 
     // Send the message
@@ -61,13 +59,27 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 // Thread function to receive messages
 void* receive_messages(void* socket_desc) {
     int sock = *(int*)socket_desc;
-    char buffer[BUFFER_SIZE];
-    int bytes_read;
+    char buffer[PAYLOAD_SIZE];
+    long bytes_read;
 
-    while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
-        SCPHeader* header = (SCPHeader*)buffer;
-        unsigned char decrypted_message[BUFFER_SIZE];
-        int plaintext_len;
+    while (!should_exit && (bytes_read = recv(sock, buffer, PAYLOAD_SIZE, 0)) > 0) {
+        if (bytes_read < sizeof(SCPHeader)) {
+            // Incomplete message, ignore
+            log_info("Error: Incomplete SCP header received");
+            continue;
+        }
+
+        const SCPHeader* header = buffer;
+
+        // Ensure payload length does not exceed the size of the buffer
+        unsigned short payload_length = ntohs(header->payload_length);
+        if (payload_length > PAYLOAD_SIZE - sizeof(SCPHeader)) {
+            log_info("Error: Payload too large to handle");
+            continue;
+        }
+
+        unsigned char decrypted_message[PAYLOAD_SIZE];
+        int plaintext_len = 0;
 
         // Decrypt the message if it has a payload
         if (ntohs(header->payload_length) > 0) {
@@ -77,8 +89,21 @@ void* receive_messages(void* socket_desc) {
                 key,
                 iv,
                 decrypted_message);
+
+            if (plaintext_len < 0) {
+                log_info("Error: Failed to decrypt the message");
+                continue;
+            }
+
+            // Ensure there's space to null-terminate the decrypted message
+            if (plaintext_len >= PAYLOAD_SIZE) {
+                log_info("Error: Decrypted message too large to handle");
+                continue;
+            }
+
             decrypted_message[plaintext_len] = '\0';
         }
+
 
         // Display the received message with timestamp
         time_t now = time(NULL);
@@ -92,6 +117,22 @@ void* receive_messages(void* socket_desc) {
             log_info_cr("Server: Goodbye acknowledged");
             should_exit = 1;
             break;
+        } else if (header->msg_type == 6) {
+            // server log is in decrypted_message
+            // write to file
+
+            FILE* f = fopen("downloaded-server.log", "w");
+            if (f == NULL) {
+                log_info("Error opening file!\n");
+                exit(1);
+            }
+
+            fprintf(f, "%s", decrypted_message);
+            fflush(f);
+            fclose(f);
+
+
+            log_info_cr("Server log saved to downloaded-server.log (%d bytes)", plaintext_len);
         } else {
             log_info_cr("%s", decrypted_message);
         }
@@ -227,7 +268,11 @@ int main() {
             } else if (strcmp(command, "help") == 0) {
                 log_info("Available commands:");
                 log_info(".exit, . - Disconnect from the server");
+                log_info(".log, .l - Download server log into downloaded-server.log");
                 log_info(".help - Show this help message");
+            } else if (strcmp(command, "log") == 0 || strcmp(command, "l") == 0) {
+                log_info("Requesting server log");
+                send_message(sock, 5, 1, 2, "Log please", key, iv);
             } else {
                 log_info("Unknown command: %s, try .help?", command);
             }
