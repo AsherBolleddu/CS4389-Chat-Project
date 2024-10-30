@@ -105,7 +105,7 @@ void broadcast_message(int sender_socket, const char* sender_id, const unsigned 
             );
 
             // Prepare and send message
-            SCPHeader header = prepare_message_to_send(1, 0, 0, (const char*)ciphertext);
+            SCPHeader header = prepare_message_to_send(1, 0, clients[i].socket, (const char*)ciphertext);
             header.payload_length = htons(ciphertext_len);
 
             char buffer[BUFFER_SIZE];
@@ -194,12 +194,13 @@ void* handle_client(void* arg) {
         int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, serverKey.key, serverKey.iv, plaintext);
         plaintext[plaintext_len] = '\0';
 
-        // Log the received and decrypted message
-        log_info("Received encrypted message: ");
+        char encrypted_message[3 * ciphertext_len + 1];
+        char* ptr = encrypted_message;
         for (int i = 0; i < ciphertext_len; i++) {
-            log_info("%02x", ciphertext[i]);
+            ptr += sprintf(ptr, "%02x", ciphertext[i]);
         }
-        log_info("Decrypted message(%s): %s", client_id, plaintext);
+        log_info("Received encrypted message: %s", encrypted_message);
+        log_info("Decrypted message: %s", plaintext);
 
         if (msg_type == 1) {
             // MESSAGE
@@ -240,6 +241,36 @@ void* handle_client(void* arg) {
             memcpy(goodbye_buffer + sizeof(SCPHeader), goodbye_cipher, goodbye_len);
 
             send(client_socket, goodbye_buffer, sizeof(SCPHeader) + goodbye_len, 0);
+            break;
+        } else if (msg_type == 5) {
+            // LOG_REQUEST
+            log_info("Received LOG_REQUEST from client %s", client_id);
+
+            const char* log = read_log_file("server.log");
+            unsigned long max_log_enc_size = strlen(log) * 2 + 1;
+            unsigned char* log_enc = malloc(max_log_enc_size);
+
+            unsigned long log_len = aes_encrypt((unsigned char*)log, strlen(log), serverKey.key, serverKey.iv, log_enc);
+            log_enc[log_len] = '\0';
+
+            SCPHeader log_header = prepare_message_to_send(6, 0, ntohl(header->sender_id), (const char*)log_enc);
+            log_header.payload_length = htons(log_len);
+
+            unsigned long log_buffer_len = sizeof(SCPHeader) + log_len;
+            unsigned char* log_buffer = malloc(log_buffer_len);
+
+            memcpy(log_buffer, &log_header, sizeof(SCPHeader));
+            memcpy(log_buffer + sizeof(SCPHeader), log_enc, log_len);
+
+            send(client_socket, log_buffer, sizeof(SCPHeader) + log_len, 0);
+
+
+            free(log_enc);
+            free(log_buffer);
+            // free(log);
+
+            log_info("Sent LOG_RESPONSE to client %s (%d bytes)", client_id, log_len);
+
             break;
         }
     }

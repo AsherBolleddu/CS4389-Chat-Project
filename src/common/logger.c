@@ -73,3 +73,27 @@ void close_logger() {
     }
 }
 
+char* read_log_file(const char* filename) {
+    FILE* file = fopen(filename, "r"); // Open in read mode
+    if (file == NULL) {
+        perror("Failed to open log file for reading");
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char* log_contents = (char*)malloc(file_size + 1);
+    if (log_contents == NULL) {
+        perror("Failed to allocate memory for log contents");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(log_contents, 1, file_size, file);
+    log_contents[file_size] = '\0';
+
+    fclose(file);
+    return log_contents;
+}
