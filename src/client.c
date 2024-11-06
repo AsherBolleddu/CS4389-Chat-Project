@@ -12,6 +12,7 @@
 #include "common/crypto.h"
 #include "common/prompt.h"
 #include "common/proto.h"
+#include "common/logger.h"
 
 #define BUFFER_SIZE 1024
 
@@ -23,13 +24,31 @@ unsigned char iv[AES_IV_SIZE];
 
 // Global flag for exit condition
 volatile int should_exit = 0;
-volatile int authenticated = 0;  // New flag to track authentication status
+volatile int authenticated = 0;  // Flag to track authentication status
+
+// Log file path
+char client_log_file[256];
 
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char *payload,
                   unsigned char *key, unsigned char *iv)
 {
+    // Calculate message hash for non-repudiation using EVP interface
+    unsigned char message_hash[EVP_MAX_MD_SIZE];
+    unsigned int md_len;
+    
+    if (calculate_message_hash((unsigned char*)payload, strlen(payload), message_hash, &md_len) != 0) {
+        perror("Failed to calculate message hash");
+        return;
+    }
+
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
+
+    // Log the message before encryption if it's a chat message and we're authenticated
+    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0) {
+        log_message("client", "server", payload, message_hash, ntohs(header.seq_num));
+        log_info("Sending message with sequence number: %d", ntohs(header.seq_num));
+    }
 
     // Encrypt the payload
     unsigned char ciphertext[BUFFER_SIZE];
@@ -45,13 +64,8 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     // Only show debug info for regular chat messages if authenticated
     if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0)
     {
-        printf("Original message: %s\n", payload);
-        printf("Encrypted message: ");
-        for (int i = 0; i < ciphertext_len; i++)
-        {
-            printf("%02x", ciphertext[i]);
-        }
-        printf("\n");
+        log_info("Original message: %s", payload);
+        log_info("Encrypted message length: %d bytes", ciphertext_len);
     }
 
     // Send the message
@@ -81,6 +95,17 @@ void *receive_messages(void *socket_desc)
                 iv,
                 decrypted_message);
             decrypted_message[plaintext_len] = '\0';
+
+            // Log received messages with modern hash calculation
+            if (authenticated) {
+                unsigned char message_hash[EVP_MAX_MD_SIZE];
+                unsigned int md_len;
+                
+                if (calculate_message_hash(decrypted_message, plaintext_len, message_hash, &md_len) == 0) {
+                    log_message("server", "client", (char *)decrypted_message, 
+                              message_hash, ntohs(header->seq_num));
+                }
+            }
         }
 
         // Display the received message with timestamp
@@ -91,11 +116,13 @@ void *receive_messages(void *socket_desc)
         {
             // MESSAGE_ACK
             printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
+            log_info("Message delivery acknowledged by server");
         }
         else if (header->msg_type == 4)
         {
             // GOODBYE_ACK
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
+            log_info("Server acknowledged disconnect request");
             should_exit = 1;
             break;
         }
@@ -109,6 +136,7 @@ void *receive_messages(void *socket_desc)
 
     if (bytes_read <= 0 && !should_exit && !authenticated) {
         printf("\rError: Failed to authenticate\n");
+        log_info("Authentication failed");
         should_exit = 1;
     }
 
@@ -129,6 +157,8 @@ void user_login(int sock)
     send(sock, client_id, strlen(client_id), 0);
     getchar(); // Consume the newline character left by scanf
 
+    log_info("Login attempt with username: %s", client_id);
+
     // sending password to the server for authentication
     char password[BUFFER_SIZE];
     printf("Enter password: ");
@@ -141,6 +171,11 @@ void user_login(int sock)
 
 int main()
 {
+    // Initialize logger
+    snprintf(client_log_file, sizeof(client_log_file), "client_%d.log", (int)time(NULL));
+    init_logger(client_log_file);
+    log_info("Client started");
+
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
     int port = 4390;
@@ -150,6 +185,8 @@ int main()
     prompt_user("Enter server address", "%s", server_address);
     prompt_user("Enter port", "%d", &port);
 
+    log_info("Connecting to server at %s:%d", server_address, port);
+
     int sock = 0;
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE] = {0};
@@ -157,7 +194,9 @@ int main()
     // Create socket
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
+        log_info("Socket creation failed");
         perror("Socket creation error");
+        close_logger();
         return -1;
     }
 
@@ -172,7 +211,9 @@ int main()
 
         if ((he = gethostbyname(server_address)) == NULL)
         {
+            log_info("DNS resolution failed for %s", server_address);
             perror("gethostbyname error");
+            close_logger();
             return -1;
         }
 
@@ -183,7 +224,9 @@ int main()
         }
         else
         {
+            log_info("No valid address found for domain %s", server_address);
             perror("No valid address found");
+            close_logger();
             return -1;
         }
     }
@@ -191,16 +234,22 @@ int main()
     {
         if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0)
         {
+            log_info("Invalid address: %s", server_address);
             perror("Invalid address/Address not supported");
+            close_logger();
             return -1;
         }
     }
 
     if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
+        log_info("Connection failed to %s:%d", server_address, port);
         perror("Connection failed");
+        close_logger();
         return -1;
     }
+
+    log_info("Connected to server successfully");
 
     // user login
     user_login(sock);
@@ -208,17 +257,23 @@ int main()
     // Read encryption keys from server
     if (read(sock, key, AES_KEY_LEN) != AES_KEY_LEN)
     {
+        log_info("Failed to receive encryption key from server");
         printf("Error: Failed to authenticate\n");
         close(sock);
+        close_logger();
         return -1;
     }
 
     if (read(sock, iv, AES_IV_SIZE) != AES_IV_SIZE)
     {
+        log_info("Failed to receive IV from server");
         printf("Error: Failed to authenticate\n");
         close(sock);
+        close_logger();
         return -1;
     }
+
+    log_info("Received encryption keys from server");
 
     // Set authenticated flag after successful key exchange
     authenticated = 1;
@@ -227,11 +282,14 @@ int main()
     pthread_t recv_thread;
     if (pthread_create(&recv_thread, NULL, receive_messages, (void *)&sock) < 0)
     {
+        log_info("Failed to create receive thread");
         perror("Could not create receive thread");
+        close_logger();
         return -1;
     }
 
     printf("Connected, use .help for command help\n");
+    log_info("Client fully initialized and ready");
 
     // Main message loop
     while (!should_exit)
@@ -245,6 +303,7 @@ int main()
             char *command = buffer + 1;
             if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0)
             {
+                log_info("User requested disconnect");
                 send_message(sock, 3, 1, 2, "Goodbye", key, iv);
                 should_exit = 1;
                 break;
@@ -258,6 +317,7 @@ int main()
             else
             {
                 printf("Unknown command: %s, try .help?\n", command);
+                log_info("Unknown command attempted: %s", command);
             }
         }
         else if (strlen(buffer) > 0)
@@ -271,5 +331,7 @@ int main()
     // Wait for receive thread to finish
     pthread_join(recv_thread, NULL);
     close(sock);
+    log_info("Client shutting down");
+    close_logger();
     return 0;
-}    
+}
