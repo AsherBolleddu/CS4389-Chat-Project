@@ -69,7 +69,7 @@ void* receive_messages(void* socket_desc) {
             continue;
         }
 
-        const SCPHeader* header = buffer;
+        const SCPHeader* header = (const SCPHeader*)buffer;
 
         // Ensure payload length does not exceed the size of the buffer
         unsigned short payload_length = ntohs(header->payload_length);
