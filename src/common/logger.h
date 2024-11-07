@@ -21,16 +21,16 @@ void init_logger(const char *filename);
 void log_message(const char *sender, const char *recipient, const char *message, 
                 const unsigned char *hash, uint16_t seq_num);
 
-// Log general information
+// Log terminal output exactly as shown
+void log_terminal_output(const char *format, ...);
+
+// Log hex data with timestamp
+void log_hex_data(const char *prefix, const unsigned char *data, int len);
+
+// Log general information with timestamp
 void log_info(const char *format, ...);
 
 // Close the logger
 void close_logger(void);
-
-// Get current timestamp as string
-char* get_timestamp_str(time_t timestamp);
-
-// Verify message integrity
-int verify_message_hash(const char *message, const unsigned char *stored_hash);
 
 #endif // LOGGER_H

@@ -42,10 +42,32 @@ void log_message(const char *sender, const char *recipient, const char *message,
         // Write the entry to the message log file
         fwrite(&entry, sizeof(LogEntry), 1, message_log_file);
         fflush(message_log_file);
+    }
+}
+
+void log_terminal_output(const char *format, ...) {
+    if (log_file) {
+        va_list args;
+        va_start(args, format);
+        vfprintf(log_file, format, args);
+        fprintf(log_file, "\n");
+        fflush(log_file);
+        va_end(args);
+    }
+}
+
+void log_hex_data(const char *prefix, const unsigned char *data, int len) {
+    if (log_file) {
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        fprintf(log_file, "[%02d:%02d:%02d] %s", 
+                t->tm_hour, t->tm_min, t->tm_sec, prefix);
         
-        // Also write to regular log file for human-readable format
-        log_info("Message sent - From: %s, To: %s, Seq: %d, Hash: %.8x...", 
-                sender, recipient, seq_num, *(unsigned int*)hash);
+        for(int i = 0; i < len; i++) {
+            fprintf(log_file, "%02x", data[i]);
+        }
+        fprintf(log_file, "\n");
+        fflush(log_file);
     }
 }
 
@@ -56,35 +78,13 @@ void log_info(const char *format, ...) {
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
         
-        fprintf(log_file, "[%04d-%02d-%02d %02d:%02d:%02d] ", 
-                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+        fprintf(log_file, "[%02d:%02d:%02d] ", 
                 t->tm_hour, t->tm_min, t->tm_sec);
         vfprintf(log_file, format, args);
         fprintf(log_file, "\n");
         fflush(log_file);
         va_end(args);
     }
-}
-
-char* get_timestamp_str(time_t timestamp) {
-    static char buffer[26];
-    struct tm *tm_info = localtime(&timestamp);
-    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-    return buffer;
-}
-
-int verify_message_hash(const char *message, const unsigned char *stored_hash) {
-    unsigned char calculated_hash[32];
-    EVP_MD_CTX *mdctx;
-    unsigned int md_len;
-
-    mdctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(mdctx, EVP_sha256(), NULL);
-    EVP_DigestUpdate(mdctx, message, strlen(message));
-    EVP_DigestFinal_ex(mdctx, calculated_hash, &md_len);
-    EVP_MD_CTX_free(mdctx);
-    
-    return memcmp(calculated_hash, stored_hash, 32) == 0;
 }
 
 void close_logger(void) {

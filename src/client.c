@@ -29,6 +29,18 @@ volatile int authenticated = 0;  // Flag to track authentication status
 // Log file path
 char client_log_file[256];
 
+// Helper function to print encrypted data in hex
+void print_encrypted_message(const unsigned char* data, int len) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    printf("\r[%02d:%02d:%02d] Sending encrypted message: ", t->tm_hour, t->tm_min, t->tm_sec);
+    for(int i = 0; i < len; i++) {
+        printf("%02x", data[i]);
+    }
+    printf("\n");
+    fflush(stdout);
+}
+
 // Function to send a message using the SCP protocol
 void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char *payload,
                   unsigned char *key, unsigned char *iv)
@@ -47,7 +59,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     // Log the message before encryption if it's a chat message and we're authenticated
     if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0) {
         log_message("client", "server", payload, message_hash, ntohs(header.seq_num));
-        log_info("Sending message with sequence number: %d", ntohs(header.seq_num));
+        log_terminal_output("Enter message: %s", payload);
     }
 
     // Encrypt the payload
@@ -64,8 +76,8 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     // Only show debug info for regular chat messages if authenticated
     if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0)
     {
-        log_info("Original message: %s", payload);
-        log_info("Encrypted message length: %d bytes", ciphertext_len);
+        print_encrypted_message(ciphertext, ciphertext_len);
+        log_hex_data("Sending encrypted message: ", ciphertext, ciphertext_len);
     }
 
     // Send the message

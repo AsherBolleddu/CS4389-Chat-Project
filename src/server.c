@@ -228,18 +228,13 @@ void *handle_client(void *arg)
         int ciphertext_len = ntohs(header->payload_length);
         unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
 
-        // Create a buffer for the hex string
-        char hex_string[BUFFER_SIZE * 2 + 1] = {0};
-        for (int i = 0; i < ciphertext_len; i++)
-        {
-            sprintf(hex_string + (i * 2), "%02x", ciphertext[i]);
-        }
-        print_with_timestamp("Received encrypted message: %s", hex_string);
+        // Log received encrypted message
+        log_hex_data("Received encrypted message: ", ciphertext, ciphertext_len);
 
         int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, serverKey.key, serverKey.iv, plaintext);
         plaintext[plaintext_len] = '\0';
 
-        print_with_timestamp("Decrypted message: %s", plaintext);
+        log_info("Decrypted message: %s", plaintext);
 
         unsigned char message_hash[EVP_MAX_MD_SIZE];
         unsigned int md_len;
@@ -247,6 +242,7 @@ void *handle_client(void *arg)
         if (calculate_message_hash(plaintext, plaintext_len, message_hash, &md_len) == 0)
         {
             log_message(client_id, "server", (char *)plaintext, message_hash, ntohs(header->seq_num));
+            log_terminal_output("%s: %s", client_id, plaintext);
         }
 
         if (msg_type == 1)
