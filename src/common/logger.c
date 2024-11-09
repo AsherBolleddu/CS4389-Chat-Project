@@ -45,14 +45,29 @@ void log_message(const char *sender, const char *recipient, const char *message,
     }
 }
 
+
 void log_terminal_output(const char *format, ...) {
     if (log_file) {
         va_list args;
         va_start(args, format);
-        vfprintf(log_file, format, args);
-        fprintf(log_file, "\n");
-        fflush(log_file);
+        char buffer[BUFFER_SIZE];
+        vsnprintf(buffer, sizeof(buffer), format, args);
         va_end(args);
+
+        // Remove any \r characters from the output
+        char *src = buffer;
+        char *dst = buffer;
+        while (*src) {
+            if (*src != '\r') {
+                *dst = *src;
+                dst++;
+            }
+            src++;
+        }
+        *dst = '\0';
+
+        fprintf(log_file, "%s\n", buffer);
+        fflush(log_file);
     }
 }
 

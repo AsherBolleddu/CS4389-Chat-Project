@@ -30,15 +30,20 @@ volatile int authenticated = 0;  // Flag to track authentication status
 char client_log_file[256];
 
 // Helper function to print encrypted data in hex
+// Helper function to print encrypted data in hex
 void print_encrypted_message(const unsigned char* data, int len) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
+    // For terminal: include \r to overwrite the "Enter message:" prompt
     printf("\r[%02d:%02d:%02d] Sending encrypted message: ", t->tm_hour, t->tm_min, t->tm_sec);
     for(int i = 0; i < len; i++) {
         printf("%02x", data[i]);
     }
     printf("\n");
     fflush(stdout);
+
+    // For log file: don't include \r
+    log_hex_data("Sending encrypted message: ", data, len);
 }
 
 // Function to send a message using the SCP protocol
