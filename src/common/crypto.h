@@ -1,6 +1,8 @@
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
+#include <stddef.h>  // Added for size_t definition
+
 #define AES_KEY_LEN 32
 #define AES_IV_SIZE 16
 #define BUFFER_SIZE 1024
@@ -19,5 +21,8 @@ int aes_encrypt(const unsigned char* plaintext, int plaintext_len, unsigned char
 // Function to decrypt the message
 int aes_decrypt(const unsigned char* ciphertext, int ciphertext_len, unsigned char* key, unsigned char* iv,
                 unsigned char* plaintext);
+
+// Function to calculate message hash using modern EVP interface
+int calculate_message_hash(const unsigned char* message, size_t message_len, unsigned char* hash, unsigned int* hash_len);
 
 #endif // CRYPTO_H

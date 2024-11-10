@@ -1,99 +1,114 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <stdarg.h>
+#include <openssl/evp.h>
 #include "logger.h"
 
-FILE* log_file = NULL;
+static FILE *log_file = NULL;
+static FILE *message_log_file = NULL;
 
-void init_logger(const char* filename) {
-    log_file = fopen(filename, "a"); // Open in append mode
+void init_logger(const char *filename) {
+    // Open general log file
+    log_file = fopen(filename, "a");
     if (log_file == NULL) {
         perror("Failed to open log file");
         exit(EXIT_FAILURE);
     }
-}
-
-void log_message(const int newline, const int cr, const char* format, va_list args) {
-    if (log_file) {
-        time_t now = time(NULL);
-        struct tm* t = localtime(&now);
-
-        // Reinitialize args for stdout before using it
-        va_list args_copy;
-        va_copy(args_copy, args);
-
-        // Log to log_file
-        fprintf(log_file, "[%02d:%02d:%02d] ", t->tm_hour, t->tm_min, t->tm_sec);
-        vfprintf(log_file, format, args_copy);
-        fprintf(log_file, "\n");
-        fflush(log_file);
-
-        // reset args_copy for stdout
-        va_end(args_copy);
-        va_copy(args_copy, args);
-
-        // Log to stdout
-        if (cr) fprintf(stdout, "\r");
-        fprintf(stdout, "[%02d:%02d:%02d] ", t->tm_hour, t->tm_min, t->tm_sec);
-        vfprintf(stdout, format, args_copy);
-        if (newline) fprintf(stdout, "\n");
-        fflush(stdout);
-
-        // Cleanup copied va_list
-        va_end(args_copy);
+    
+    // Open message log file for non-repudiation
+    char message_log_filename[256];
+    snprintf(message_log_filename, sizeof(message_log_filename), "%s_messages", filename);
+    message_log_file = fopen(message_log_filename, "ab+");
+    if (message_log_file == NULL) {
+        perror("Failed to open message log file");
+        fclose(log_file);
+        exit(EXIT_FAILURE);
     }
 }
 
-void log_info(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    log_message(1, 0, format, args);
-    va_end(args);
+void log_message(const char *sender, const char *recipient, const char *message, 
+                const unsigned char *hash, uint16_t seq_num) {
+    if (message_log_file) {
+        LogEntry entry;
+        entry.timestamp = time(NULL);
+        strncpy(entry.sender, sender, sizeof(entry.sender) - 1);
+        strncpy(entry.recipient, recipient, sizeof(entry.recipient) - 1);
+        strncpy(entry.message, message, sizeof(entry.message) - 1);
+        memcpy(entry.message_hash, hash, 32);
+        entry.sequence_number = seq_num;
+        
+        // Write the entry to the message log file
+        fwrite(&entry, sizeof(LogEntry), 1, message_log_file);
+        fflush(message_log_file);
+    }
 }
 
-void log_info_cr(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    log_message(1, 1, format, args);
-    va_end(args);
+
+void log_terminal_output(const char *format, ...) {
+    if (log_file) {
+        va_list args;
+        va_start(args, format);
+        char buffer[BUFFER_SIZE];
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+
+        // Remove any \r characters from the output
+        char *src = buffer;
+        char *dst = buffer;
+        while (*src) {
+            if (*src != '\r') {
+                *dst = *src;
+                dst++;
+            }
+            src++;
+        }
+        *dst = '\0';
+
+        fprintf(log_file, "%s\n", buffer);
+        fflush(log_file);
+    }
 }
 
-void log_info_noline(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    log_message(0, 0, format, args);
-    va_end(args);
+void log_hex_data(const char *prefix, const unsigned char *data, int len) {
+    if (log_file) {
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        fprintf(log_file, "[%02d:%02d:%02d] %s", 
+                t->tm_hour, t->tm_min, t->tm_sec, prefix);
+        
+        for(int i = 0; i < len; i++) {
+            fprintf(log_file, "%02x", data[i]);
+        }
+        fprintf(log_file, "\n");
+        fflush(log_file);
+    }
 }
 
-void close_logger() {
+void log_info(const char *format, ...) {
+    if (log_file) {
+        va_list args;
+        va_start(args, format);
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        
+        fprintf(log_file, "[%02d:%02d:%02d] ", 
+                t->tm_hour, t->tm_min, t->tm_sec);
+        vfprintf(log_file, format, args);
+        fprintf(log_file, "\n");
+        fflush(log_file);
+        va_end(args);
+    }
+}
+
+void close_logger(void) {
     if (log_file) {
         fclose(log_file);
         log_file = NULL;
     }
-}
-
-char* read_log_file(const char* filename) {
-    FILE* file = fopen(filename, "r"); // Open in read mode
-    if (file == NULL) {
-        perror("Failed to open log file for reading");
-        return NULL;
+    if (message_log_file) {
+        fclose(message_log_file);
+        message_log_file = NULL;
     }
-
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    char* log_contents = (char*)malloc(file_size + 1);
-    if (log_contents == NULL) {
-        perror("Failed to allocate memory for log contents");
-        fclose(file);
-        return NULL;
-    }
-
-    fread(log_contents, 1, file_size, file);
-    log_contents[file_size] = '\0';
-
-    fclose(file);
-    return log_contents;
 }
