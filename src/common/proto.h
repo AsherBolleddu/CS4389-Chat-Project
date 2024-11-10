@@ -20,6 +20,7 @@ typedef struct {
 #define MSG_TYPE_GOODBYE_ACK 4
 #define MSG_TYPE_LOG_REQUEST 5
 #define MSG_TYPE_LOG_RESPONSE 6
+#define MSG_TYPE_PRIVATE_MSG 7  // New message type for private messages
 
 SCPHeader prepare_message_to_send(uint8_t msg_type, uint32_t sender_id, uint32_t recipient_id, const char* payload);
 

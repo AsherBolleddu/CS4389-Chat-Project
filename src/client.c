@@ -61,7 +61,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Log the message before encryption if it's a chat message and we're authenticated
-    if (authenticated && msg_type == MSG_TYPE_CHAT) {
+    if (authenticated && (msg_type == MSG_TYPE_CHAT || msg_type == MSG_TYPE_PRIVATE_MSG)) {
         log_message("client", "server", payload, message_hash, ntohs(header.seq_num));
         log_terminal_output("Enter message: %s", payload);
     }
@@ -78,7 +78,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
     // Only show debug info for regular chat messages if authenticated
-    if (authenticated && msg_type == MSG_TYPE_CHAT)
+    if (authenticated && (msg_type == MSG_TYPE_CHAT || msg_type == MSG_TYPE_PRIVATE_MSG))
     {
         print_encrypted_message(ciphertext, ciphertext_len);
         log_hex_data("Sending encrypted message: ", ciphertext, ciphertext_len);
@@ -147,6 +147,11 @@ void *receive_messages(void *socket_desc)
             printf("\r[%02d:%02d:%02d] Received server log:\n\n%s\n", 
                    t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
             log_info("Received server log file");
+        }
+        else if (header->msg_type == MSG_TYPE_PRIVATE_MSG) 
+        {
+            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
+            log_info("Received private message");
         }
         else
         {
@@ -336,14 +341,24 @@ int main()
                 printf(".exit, . - Disconnect from the server\n");
                 printf(".help - Show this help message\n");
                 printf(".log - Request server log file\n");
+                printf(".pm <username> <message> - Send private message\n");
             }
             else if (strcmp(command, "log") == 0)
             {
                 log_info("Requesting server log file");
-                // Send log request without displaying encryption debug
                 SCPHeader header = prepare_message_to_send(MSG_TYPE_LOG_REQUEST, 1, 2, "");
                 header.payload_length = 0;
                 send(sock, &header, sizeof(SCPHeader), 0);
+            }
+            else if (strncmp(command, "pm ", 3) == 0)
+            {
+                char *msg = buffer + 4; // Skip ".pm "
+                if (strlen(msg) > 0) {
+                    log_info("Sending private message");
+                    send_message(sock, MSG_TYPE_PRIVATE_MSG, 1, 2, msg, key, iv);
+                } else {
+                    printf("Usage: .pm <username> <message>\n");
+                }
             }
             else
             {

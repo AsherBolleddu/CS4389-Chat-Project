@@ -108,6 +108,100 @@ int getServerIDIndex(const char *serverID)
     return -1;
 }
 
+// New function to send private message
+void send_private_message(int sender_socket, const char *sender_id, const char *recipient_id,
+                          const unsigned char *message, int msg_len)
+{
+    unsigned char message_hash[EVP_MAX_MD_SIZE];
+    unsigned int md_len;
+
+    if (calculate_message_hash(message, msg_len, message_hash, &md_len) != 0)
+    {
+        print_with_timestamp("Failed to calculate message hash");
+        return;
+    }
+
+    char formatted_msg[BUFFER_SIZE];
+    snprintf(formatted_msg, BUFFER_SIZE, "[Private from %s]: %s", sender_id, message);
+
+    pthread_mutex_lock(&clients_mutex);
+
+    // Find recipient
+    int recipient_found = 0;
+    for (int i = 0; i < client_count; i++)
+    {
+        if (strcmp(clients[i].id, recipient_id) == 0 && clients[i].socket != sender_socket)
+        {
+            unsigned char ciphertext[BUFFER_SIZE];
+            int ciphertext_len = aes_encrypt(
+                (unsigned char *)formatted_msg,
+                strlen(formatted_msg),
+                clients[i].keys.key,
+                clients[i].keys.iv,
+                ciphertext);
+
+            SCPHeader header = prepare_message_to_send(MSG_TYPE_PRIVATE_MSG, 0, 0,
+                                                       (const char *)ciphertext);
+            header.payload_length = htons(ciphertext_len);
+
+            char buffer[BUFFER_SIZE];
+            memcpy(buffer, &header, sizeof(SCPHeader));
+            memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
+
+            send(clients[i].socket, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
+
+            // Send confirmation to sender
+            char confirm_msg[BUFFER_SIZE];
+            snprintf(confirm_msg, BUFFER_SIZE, "[Private to %s]: %s", recipient_id, message);
+
+            ciphertext_len = aes_encrypt(
+                (unsigned char *)confirm_msg,
+                strlen(confirm_msg),
+                serverKey.key,
+                serverKey.iv,
+                ciphertext);
+
+            header = prepare_message_to_send(MSG_TYPE_PRIVATE_MSG, 0, 0, (const char *)ciphertext);
+            header.payload_length = htons(ciphertext_len);
+
+            memcpy(buffer, &header, sizeof(SCPHeader));
+            memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
+
+            send(sender_socket, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
+
+            recipient_found = 1;
+            log_message(sender_id, recipient_id, (const char *)message, message_hash, 0);
+            break;
+        }
+    }
+
+    if (!recipient_found)
+    {
+        // Send error message to sender
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, BUFFER_SIZE, "Error: User '%s' not found or offline", recipient_id);
+
+        unsigned char ciphertext[BUFFER_SIZE];
+        int ciphertext_len = aes_encrypt(
+            (unsigned char *)error_msg,
+            strlen(error_msg),
+            serverKey.key,
+            serverKey.iv,
+            ciphertext);
+
+        SCPHeader header = prepare_message_to_send(MSG_TYPE_PRIVATE_MSG, 0, 0, (const char *)ciphertext);
+        header.payload_length = htons(ciphertext_len);
+
+        char buffer[BUFFER_SIZE];
+        memcpy(buffer, &header, sizeof(SCPHeader));
+        memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
+
+        send(sender_socket, buffer, sizeof(SCPHeader) + ciphertext_len, 0);
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
 void broadcast_message(int sender_socket, const char *sender_id, const unsigned char *original_msg, int msg_len)
 {
     unsigned char message_hash[EVP_MAX_MD_SIZE];
@@ -251,7 +345,6 @@ void *handle_client(void *arg)
         client_count++;
     }
     pthread_mutex_unlock(&clients_mutex);
-
     if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN)
     {
         fail_client_with_error("Error sending AES key", client_socket);
@@ -317,6 +410,16 @@ void *handle_client(void *arg)
             memcpy(ack_buffer + sizeof(SCPHeader), ack_cipher, ack_len);
 
             send(client_socket, ack_buffer, sizeof(SCPHeader) + ack_len, 0);
+        }
+        else if (msg_type == MSG_TYPE_PRIVATE_MSG)
+        {
+            // Extract recipient and message from the plaintext
+            char recipient_id[100], message_text[BUFFER_SIZE];
+            sscanf((char *)plaintext, "%s %[^\n]", recipient_id, message_text);
+
+            print_with_timestamp("Received private message from %s to %s", client_id, recipient_id);
+            send_private_message(client_socket, client_id, recipient_id,
+                                 (const unsigned char *)message_text, strlen(message_text));
         }
         else if (msg_type == MSG_TYPE_GOODBYE)
         {
