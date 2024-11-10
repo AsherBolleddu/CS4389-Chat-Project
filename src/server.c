@@ -277,26 +277,65 @@ void send_file_contents(int client_socket, const char *filepath, const char *cli
         return;
     }
 
-    // Read file content
-    char content[BUFFER_SIZE];
-    size_t bytes_read = fread(content, 1, BUFFER_SIZE - 1, file);
-    content[bytes_read] = '\0';
+    // Read file content in chunks to avoid buffer overflow
+    char content[BUFFER_SIZE] = {0};
+    char total_content[BUFFER_SIZE * 4] = {0}; // Larger buffer for accumulating content
+    size_t total_bytes = 0;
+    size_t bytes_read;
+
+    while ((bytes_read = fread(content, 1, BUFFER_SIZE - 1, file)) > 0) {
+        // Check if we have enough space in total_content
+        if (total_bytes + bytes_read >= sizeof(total_content) - 1) {
+            // Buffer would overflow, break and send what we have
+            break;
+        }
+        
+        // Append this chunk to total_content
+        memcpy(total_content + total_bytes, content, bytes_read);
+        total_bytes += bytes_read;
+        
+        // Clear the temporary buffer for next read
+        memset(content, 0, BUFFER_SIZE);
+    }
+    
+    total_content[total_bytes] = '\0';
     fclose(file);
 
     // Encrypt and send content
-    unsigned char content_cipher[BUFFER_SIZE];
-    int content_len = aes_encrypt((unsigned char *)content, strlen(content),
+    unsigned char content_cipher[BUFFER_SIZE * 4];
+    int content_len = aes_encrypt((unsigned char *)total_content, strlen(total_content),
                                   serverKey.key, serverKey.iv, content_cipher);
 
     SCPHeader content_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
                                                        (const char *)content_cipher);
     content_header.payload_length = htons(content_len);
 
-    char content_buffer[BUFFER_SIZE];
+    // Ensure we have enough space for header + encrypted content
+    char *content_buffer = malloc(sizeof(SCPHeader) + content_len);
+    if (!content_buffer) {
+        const char *error_msg = "Error: Server memory allocation failed";
+        unsigned char error_cipher[BUFFER_SIZE];
+        int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
+                                    serverKey.key, serverKey.iv, error_cipher);
+
+        SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
+                                                         (const char *)error_cipher);
+        error_header.payload_length = htons(error_len);
+
+        char error_buffer[BUFFER_SIZE];
+        memcpy(error_buffer, &error_header, sizeof(SCPHeader));
+        memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
+
+        send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
+        return;
+    }
+
     memcpy(content_buffer, &content_header, sizeof(SCPHeader));
     memcpy(content_buffer + sizeof(SCPHeader), content_cipher, content_len);
 
     send(client_socket, content_buffer, sizeof(SCPHeader) + content_len, 0);
+    free(content_buffer);
+    
     print_with_timestamp("Sent file contents to %s", client_id);
 }
 
