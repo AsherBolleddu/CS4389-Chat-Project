@@ -7,6 +7,8 @@
 #include <time.h>
 #include <stdarg.h>
 #include <openssl/evp.h>
+#include <openssl/rand.h>
+
 
 #include "common/crypto.h"
 #include "common/prompt.h"
@@ -15,6 +17,9 @@
 
 #define SERVER_ID_ARR_SIZE 4
 #define NUM_KEYS 4
+#define MAX_USERS 20
+//the length of ID name
+#define MAX_CLIENT_ID 100
 
 static char *serverIDs[SERVER_ID_ARR_SIZE] = {"admin_chat", "chat_1", "chat_2", "chat_3"};
 
@@ -25,13 +30,23 @@ typedef struct
     AESKeyIV keys;
 } Client;
 
-AESKeyIV serverKeys[NUM_KEYS] = {
-    {"01234567890123456789012345678901", "0123456789012345"},
-    {"qkQLBzfpIqdlSIEeuL3SKwDIxcWanTKJ", "abcdefabcdefabcd"},
-    {"ablV1mwafBHnzdC9BCaXXw9bo7DtiH7T", "1122334455667788"},
-    {"OccNAAc8VsjLVB2xUgK6A3adzYz96bG8", "0011223344556677"}};
+// struct used to save usernames which have
+// access to a server 
+typedef struct {
+    char users[MAX_USERS][MAX_CLIENT_ID];
+    int numUsers;
+} ServerAccess;
 
-AESKeyIV serverKey;
+//User access for each server
+ServerAccess serverAccesses[SERVER_ID_ARR_SIZE] = {
+    {{{"soulcord"}, {"John"}, {"Dylan55"}, {"Tri"}, {"PlzRefrain"}, {"Chen"}, {"seivc"}, {"max"}}, 8},
+    {{{"soulcord"}, {"John"}, {"Dylan55"}}, 3},
+    {{{"PlzRefrain"}, {"Chen"}, {"seivc"}, {"max"}}, 4},
+    {{{"User9"}, {"User10"}}, 2}
+};
+
+ServerAccess currentServerAccesses;
+AESKeyIV chatKey;
 Client clients[MAX_CLIENTS];
 int client_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -96,6 +111,19 @@ int check_credentials(const char *username, const unsigned char *cipherpassword)
     return 0;
 }
 
+// checks if the user has access to the server
+int check_server_access(const char *username) {
+    int serverSize = currentServerAccesses.numUsers;
+
+    for (int i = 0; i < serverSize; i++) {
+        if(strcmp(username, currentServerAccesses.users[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+    
+}
+
 int getServerIDIndex(const char *serverID)
 {
     for (int i = 0; i < SERVER_ID_ARR_SIZE; i++)
@@ -157,8 +185,8 @@ void send_private_message(int sender_socket, const char *sender_id, const char *
             ciphertext_len = aes_encrypt(
                 (unsigned char *)confirm_msg,
                 strlen(confirm_msg),
-                serverKey.key,
-                serverKey.iv,
+                chatKey.key,
+                chatKey.iv,
                 ciphertext);
 
             header = prepare_message_to_send(MSG_TYPE_PRIVATE_MSG, 0, 0, (const char *)ciphertext);
@@ -185,8 +213,8 @@ void send_private_message(int sender_socket, const char *sender_id, const char *
         int ciphertext_len = aes_encrypt(
             (unsigned char *)error_msg,
             strlen(error_msg),
-            serverKey.key,
-            serverKey.iv,
+            chatKey.key,
+            chatKey.iv,
             ciphertext);
 
         SCPHeader header = prepare_message_to_send(MSG_TYPE_PRIVATE_MSG, 0, 0, (const char *)ciphertext);
@@ -263,7 +291,7 @@ void send_file_contents(int client_socket, const char *filepath, const char *cli
         const char *error_msg = "Error: Could not read requested file";
         unsigned char error_cipher[BUFFER_SIZE];
         int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
-                                    serverKey.key, serverKey.iv, error_cipher);
+                                    chatKey.key, chatKey.iv, error_cipher);
 
         SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
                                                          (const char *)error_cipher);
@@ -304,7 +332,7 @@ void send_file_contents(int client_socket, const char *filepath, const char *cli
     // Encrypt and send content
     unsigned char content_cipher[BUFFER_SIZE * 4];
     int content_len = aes_encrypt((unsigned char *)total_content, strlen(total_content),
-                                  serverKey.key, serverKey.iv, content_cipher);
+                                  chatKey.key, chatKey.iv, content_cipher);
 
     SCPHeader content_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
                                                        (const char *)content_cipher);
@@ -316,7 +344,7 @@ void send_file_contents(int client_socket, const char *filepath, const char *cli
         const char *error_msg = "Error: Server memory allocation failed";
         unsigned char error_cipher[BUFFER_SIZE];
         int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
-                                    serverKey.key, serverKey.iv, error_cipher);
+                                    chatKey.key, chatKey.iv, error_cipher);
 
         SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
                                                          (const char *)error_cipher);
@@ -348,12 +376,15 @@ void *handle_client(void *arg)
     char client_id[100];
     char password[BUFFER_SIZE];
     int check = 0;
+    int IDcheck = 0;
 
     if ((bytes_read = recv(client_socket, client_id, sizeof(client_id), 0)) > 0)
     {
         client_id[bytes_read] = '\0';
         log_info("Client connection attempt from: %s", client_id);
+        IDcheck = check_server_access(client_id);
     }
+
 
     if ((bytes_read = recv(client_socket, password, sizeof(password), 0)) > 0)
     {
@@ -364,6 +395,14 @@ void *handle_client(void *arg)
         int ciphertext_len = ntohs(header->payload_length);
         unsigned char *cipherpassword = (unsigned char *)(password + sizeof(SCPHeader));
         check = check_credentials(client_id, cipherpassword);
+    }
+
+    // handling the case if user does
+    // not have access to chat server
+    if(IDcheck != 1) {
+        print_with_timestamp("Access denied for %s", client_id);
+        char error[BUFFER_SIZE] = "Access Denied, user does not have access to Server";
+        fail_client_with_error(error, client_socket);
     }
 
     if (check != 1)
@@ -380,16 +419,16 @@ void *handle_client(void *arg)
     {
         clients[client_count].socket = client_socket;
         strncpy(clients[client_count].id, client_id, sizeof(clients[client_count].id) - 1);
-        memcpy(&clients[client_count].keys, &serverKey, sizeof(AESKeyIV));
+        memcpy(&clients[client_count].keys, &chatKey, sizeof(AESKeyIV));
         client_count++;
     }
     pthread_mutex_unlock(&clients_mutex);
-    if (send(client_socket, serverKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN)
+    if (send(client_socket, chatKey.key, AES_KEY_LEN, 0) != AES_KEY_LEN)
     {
         fail_client_with_error("Error sending AES key", client_socket);
     }
 
-    if (send(client_socket, serverKey.iv, AES_IV_SIZE, 0) != AES_IV_SIZE)
+    if (send(client_socket, chatKey.iv, AES_IV_SIZE, 0) != AES_IV_SIZE)
     {
         fail_client_with_error("Error sending AES IV", client_socket);
     }
@@ -416,7 +455,7 @@ void *handle_client(void *arg)
         // Log received encrypted message
         log_hex_data("Received encrypted message: ", ciphertext, ciphertext_len);
 
-        int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, serverKey.key, serverKey.iv, plaintext);
+        int plaintext_len = aes_decrypt(ciphertext, ciphertext_len, chatKey.key, chatKey.iv, plaintext);
         plaintext[plaintext_len] = '\0';
 
         log_info("Decrypted message: %s", plaintext);
@@ -438,7 +477,7 @@ void *handle_client(void *arg)
             char ack_msg[] = "Message received";
             unsigned char ack_cipher[BUFFER_SIZE];
             int ack_len = aes_encrypt((unsigned char *)ack_msg, strlen(ack_msg),
-                                      serverKey.key, serverKey.iv, ack_cipher);
+                                      chatKey.key, chatKey.iv, ack_cipher);
 
             SCPHeader ack_header = prepare_message_to_send(MSG_TYPE_ACK, 0, ntohl(header->sender_id),
                                                            (const char *)ack_cipher);
@@ -468,7 +507,7 @@ void *handle_client(void *arg)
             char goodbye_msg[] = "Goodbye acknowledged";
             unsigned char goodbye_cipher[BUFFER_SIZE];
             int goodbye_len = aes_encrypt((unsigned char *)goodbye_msg, strlen(goodbye_msg),
-                                          serverKey.key, serverKey.iv, goodbye_cipher);
+                                          chatKey.key, chatKey.iv, goodbye_cipher);
 
             SCPHeader goodbye_header = prepare_message_to_send(MSG_TYPE_GOODBYE_ACK, 0, ntohl(header->sender_id),
                                                                (const char *)goodbye_cipher);
@@ -529,7 +568,19 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    serverKey = serverKeys[serverIDIndex];
+    currentServerAccesses = serverAccesses[serverIDIndex];
+
+
+    // Random AES key and IV
+    if (RAND_bytes(chatKey.key, AES_KEY_LEN) != 1) {
+        perror("Key Generation Failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if(RAND_bytes(chatKey.iv, AES_IV_SIZE) != 1) {
+        perror("IV Generation failed");
+        exit(EXIT_FAILURE);
+    }
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
