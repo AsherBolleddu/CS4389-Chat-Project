@@ -138,7 +138,7 @@ void broadcast_message(int sender_socket, const char *sender_id, const unsigned 
                 clients[i].keys.iv,
                 ciphertext);
 
-            SCPHeader header = prepare_message_to_send(1, 0, 0, (const char *)ciphertext);
+            SCPHeader header = prepare_message_to_send(MSG_TYPE_CHAT, 0, 0, (const char *)ciphertext);
             header.payload_length = htons(ciphertext_len);
 
             char buffer[BUFFER_SIZE];
@@ -159,6 +159,51 @@ void fail_client_with_error(const char *error_msg, int client_socket)
     log_info("Client connection failed: %s", error_msg);
     close(client_socket);
     pthread_exit(NULL);
+}
+
+void send_file_contents(int client_socket, const char *filepath, const char *client_id)
+{
+    FILE *file = fopen(filepath, "r");
+    if (!file)
+    {
+        const char *error_msg = "Error: Could not read requested file";
+        unsigned char error_cipher[BUFFER_SIZE];
+        int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
+                                    serverKey.key, serverKey.iv, error_cipher);
+
+        SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
+                                                         (const char *)error_cipher);
+        error_header.payload_length = htons(error_len);
+
+        char error_buffer[BUFFER_SIZE];
+        memcpy(error_buffer, &error_header, sizeof(SCPHeader));
+        memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
+
+        send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
+        return;
+    }
+
+    // Read file content
+    char content[BUFFER_SIZE];
+    size_t bytes_read = fread(content, 1, BUFFER_SIZE - 1, file);
+    content[bytes_read] = '\0';
+    fclose(file);
+
+    // Encrypt and send content
+    unsigned char content_cipher[BUFFER_SIZE];
+    int content_len = aes_encrypt((unsigned char *)content, strlen(content),
+                                  serverKey.key, serverKey.iv, content_cipher);
+
+    SCPHeader content_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
+                                                       (const char *)content_cipher);
+    content_header.payload_length = htons(content_len);
+
+    char content_buffer[BUFFER_SIZE];
+    memcpy(content_buffer, &content_header, sizeof(SCPHeader));
+    memcpy(content_buffer + sizeof(SCPHeader), content_cipher, content_len);
+
+    send(client_socket, content_buffer, sizeof(SCPHeader) + content_len, 0);
+    print_with_timestamp("Sent file contents to %s", client_id);
 }
 
 void *handle_client(void *arg)
@@ -224,6 +269,14 @@ void *handle_client(void *arg)
         SCPHeader *header = (SCPHeader *)buffer;
         uint8_t msg_type = header->msg_type;
 
+        if (msg_type == MSG_TYPE_LOG_REQUEST)
+        {
+            print_with_timestamp("Received log file request from %s", client_id);
+            log_info("Log file requested by %s", client_id);
+            send_file_contents(client_socket, server_log_file, client_id);
+            continue;
+        }
+
         unsigned char plaintext[BUFFER_SIZE];
         int ciphertext_len = ntohs(header->payload_length);
         unsigned char *ciphertext = (unsigned char *)(buffer + sizeof(SCPHeader));
@@ -245,7 +298,7 @@ void *handle_client(void *arg)
             log_terminal_output("%s: %s", client_id, plaintext);
         }
 
-        if (msg_type == 1)
+        if (msg_type == MSG_TYPE_CHAT)
         {
             print_with_timestamp("Received MESSAGE from client");
             broadcast_message(client_socket, client_id, plaintext, plaintext_len);
@@ -255,7 +308,7 @@ void *handle_client(void *arg)
             int ack_len = aes_encrypt((unsigned char *)ack_msg, strlen(ack_msg),
                                       serverKey.key, serverKey.iv, ack_cipher);
 
-            SCPHeader ack_header = prepare_message_to_send(2, 0, ntohl(header->sender_id),
+            SCPHeader ack_header = prepare_message_to_send(MSG_TYPE_ACK, 0, ntohl(header->sender_id),
                                                            (const char *)ack_cipher);
             ack_header.payload_length = htons(ack_len);
 
@@ -265,7 +318,7 @@ void *handle_client(void *arg)
 
             send(client_socket, ack_buffer, sizeof(SCPHeader) + ack_len, 0);
         }
-        else if (msg_type == 3)
+        else if (msg_type == MSG_TYPE_GOODBYE)
         {
             print_with_timestamp("Received GOODBYE from client: %s", client_id);
             broadcast_message(client_socket, client_id, (const unsigned char *)"has left the chat", 15);
@@ -275,7 +328,7 @@ void *handle_client(void *arg)
             int goodbye_len = aes_encrypt((unsigned char *)goodbye_msg, strlen(goodbye_msg),
                                           serverKey.key, serverKey.iv, goodbye_cipher);
 
-            SCPHeader goodbye_header = prepare_message_to_send(4, 0, ntohl(header->sender_id),
+            SCPHeader goodbye_header = prepare_message_to_send(MSG_TYPE_GOODBYE_ACK, 0, ntohl(header->sender_id),
                                                                (const char *)goodbye_cipher);
             goodbye_header.payload_length = htons(goodbye_len);
 

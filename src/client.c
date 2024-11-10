@@ -30,7 +30,6 @@ volatile int authenticated = 0;  // Flag to track authentication status
 char client_log_file[256];
 
 // Helper function to print encrypted data in hex
-// Helper function to print encrypted data in hex
 void print_encrypted_message(const unsigned char* data, int len) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
@@ -62,7 +61,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     SCPHeader header = prepare_message_to_send(msg_type, sender_id, recipient_id, payload);
 
     // Log the message before encryption if it's a chat message and we're authenticated
-    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0) {
+    if (authenticated && msg_type == MSG_TYPE_CHAT) {
         log_message("client", "server", payload, message_hash, ntohs(header.seq_num));
         log_terminal_output("Enter message: %s", payload);
     }
@@ -79,7 +78,7 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
     memcpy(buffer + sizeof(SCPHeader), ciphertext, ciphertext_len);
 
     // Only show debug info for regular chat messages if authenticated
-    if (authenticated && msg_type == 1 && strncmp(payload, "pass", 4) != 0)
+    if (authenticated && msg_type == MSG_TYPE_CHAT)
     {
         print_encrypted_message(ciphertext, ciphertext_len);
         log_hex_data("Sending encrypted message: ", ciphertext, ciphertext_len);
@@ -129,19 +128,25 @@ void *receive_messages(void *socket_desc)
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
 
-        if (header->msg_type == 2)
+        if (header->msg_type == MSG_TYPE_ACK)
         {
             // MESSAGE_ACK
             printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
             log_info("Message delivery acknowledged by server");
         }
-        else if (header->msg_type == 4)
+        else if (header->msg_type == MSG_TYPE_GOODBYE_ACK)
         {
             // GOODBYE_ACK
             printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
             log_info("Server acknowledged disconnect request");
             should_exit = 1;
             break;
+        }
+        else if (header->msg_type == MSG_TYPE_LOG_RESPONSE)
+        {
+            printf("\r[%02d:%02d:%02d] Received server log:\n\n%s\n", 
+                   t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
+            log_info("Received server log file");
         }
         else
         {
@@ -183,7 +188,7 @@ void user_login(int sock)
     password[strcspn(password, "\n")] = 0;
     
     // Send encrypted password to server without displaying debug info
-    send_message(sock, 1, 1, 2, password, key, iv);
+    send_message(sock, MSG_TYPE_CHAT, 1, 2, password, key, iv);
 }
 
 int main()
@@ -195,7 +200,7 @@ int main()
 
     char type[10] = "ip";
     char server_address[100] = "127.0.0.1";
-    int port = 4390;
+    int port = DEFAULT_PORT;
 
     // Get server connection details from user
     prompt_user("Is the server address an IP or domain? ip/domain", "%s", type);
@@ -321,7 +326,7 @@ int main()
             if (strcmp(command, "") == 0 || strcmp(command, "exit") == 0)
             {
                 log_info("User requested disconnect");
-                send_message(sock, 3, 1, 2, "Goodbye", key, iv);
+                send_message(sock, MSG_TYPE_GOODBYE, 1, 2, "Goodbye", key, iv);
                 should_exit = 1;
                 break;
             }
@@ -330,6 +335,15 @@ int main()
                 printf("Available commands:\n");
                 printf(".exit, . - Disconnect from the server\n");
                 printf(".help - Show this help message\n");
+                printf(".log - Request server log file\n");
+            }
+            else if (strcmp(command, "log") == 0)
+            {
+                log_info("Requesting server log file");
+                // Send log request without displaying encryption debug
+                SCPHeader header = prepare_message_to_send(MSG_TYPE_LOG_REQUEST, 1, 2, "");
+                header.payload_length = 0;
+                send(sock, &header, sizeof(SCPHeader), 0);
             }
             else
             {
@@ -339,7 +353,7 @@ int main()
         }
         else if (strlen(buffer) > 0)
         {
-            send_message(sock, 1, 1, 2, buffer, key, iv);
+            send_message(sock, MSG_TYPE_CHAT, 1, 2, buffer, key, iv);
         }
 
         memset(buffer, 0, BUFFER_SIZE);
