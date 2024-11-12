@@ -285,86 +285,167 @@ void fail_client_with_error(const char *error_msg, int client_socket)
 
 void send_file_contents(int client_socket, const char *filepath, const char *client_id)
 {
-    FILE *file = fopen(filepath, "r");
+    // Open file in binary mode to prevent text translation issues
+    FILE *file = fopen(filepath, "rb");
     if (!file)
     {
         const char *error_msg = "Error: Could not read requested file";
         unsigned char error_cipher[BUFFER_SIZE];
-        int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
-                                    chatKey.key, chatKey.iv, error_cipher);
+        int error_len = aes_encrypt(
+            (unsigned char *)error_msg, 
+            strlen(error_msg),
+            chatKey.key, 
+            chatKey.iv, 
+            error_cipher
+        );
 
-        SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
-                                                         (const char *)error_cipher);
+        SCPHeader error_header = prepare_message_to_send(
+            MSG_TYPE_LOG_RESPONSE, 
+            0, 
+            1,
+            (const char *)error_cipher
+        );
         error_header.payload_length = htons(error_len);
 
-        char error_buffer[BUFFER_SIZE];
+        // Send error response
+        char error_buffer[sizeof(SCPHeader) + BUFFER_SIZE];
         memcpy(error_buffer, &error_header, sizeof(SCPHeader));
         memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
-
         send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
         return;
     }
 
-    // Read file content in chunks to avoid buffer overflow
-    char content[BUFFER_SIZE] = {0};
-    char total_content[BUFFER_SIZE * 4] = {0}; // Larger buffer for accumulating content
-    size_t total_bytes = 0;
-    size_t bytes_read;
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    while ((bytes_read = fread(content, 1, BUFFER_SIZE - 1, file)) > 0) {
-        // Check if we have enough space in total_content
-        if (total_bytes + bytes_read >= sizeof(total_content) - 1) {
-            // Buffer would overflow, break and send what we have
-            break;
-        }
-        
-        // Append this chunk to total_content
-        memcpy(total_content + total_bytes, content, bytes_read);
-        total_bytes += bytes_read;
-        
-        // Clear the temporary buffer for next read
-        memset(content, 0, BUFFER_SIZE);
-    }
-    
-    total_content[total_bytes] = '\0';
-    fclose(file);
-
-    // Encrypt and send content
-    unsigned char content_cipher[BUFFER_SIZE * 4];
-    int content_len = aes_encrypt((unsigned char *)total_content, strlen(total_content),
-                                  chatKey.key, chatKey.iv, content_cipher);
-
-    SCPHeader content_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
-                                                       (const char *)content_cipher);
-    content_header.payload_length = htons(content_len);
-
-    // Ensure we have enough space for header + encrypted content
-    char *content_buffer = malloc(sizeof(SCPHeader) + content_len);
-    if (!content_buffer) {
+    // Allocate buffer for file content
+    char *content = malloc(file_size + 1);
+    if (!content)
+    {
         const char *error_msg = "Error: Server memory allocation failed";
         unsigned char error_cipher[BUFFER_SIZE];
-        int error_len = aes_encrypt((unsigned char *)error_msg, strlen(error_msg),
-                                    chatKey.key, chatKey.iv, error_cipher);
+        int error_len = aes_encrypt(
+            (unsigned char *)error_msg, 
+            strlen(error_msg),
+            chatKey.key, 
+            chatKey.iv, 
+            error_cipher
+        );
 
-        SCPHeader error_header = prepare_message_to_send(MSG_TYPE_LOG_RESPONSE, 0, 1,
-                                                         (const char *)error_cipher);
+        SCPHeader error_header = prepare_message_to_send(
+            MSG_TYPE_LOG_RESPONSE, 
+            0, 
+            1,
+            (const char *)error_cipher
+        );
         error_header.payload_length = htons(error_len);
 
-        char error_buffer[BUFFER_SIZE];
+        char error_buffer[sizeof(SCPHeader) + BUFFER_SIZE];
         memcpy(error_buffer, &error_header, sizeof(SCPHeader));
         memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
+        send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
+        
+        fclose(file);
+        return;
+    }
 
+    // Read file content
+    size_t bytes_read = fread(content, 1, file_size, file);
+    content[bytes_read] = '\0';
+    fclose(file);
+
+    // Encrypt content
+    unsigned char *content_cipher = malloc(bytes_read + EVP_MAX_BLOCK_LENGTH);
+    if (!content_cipher)
+    {
+        free(content);
+        const char *error_msg = "Error: Server encryption buffer allocation failed";
+        unsigned char error_cipher[BUFFER_SIZE];
+        int error_len = aes_encrypt(
+            (unsigned char *)error_msg, 
+            strlen(error_msg),
+            chatKey.key, 
+            chatKey.iv, 
+            error_cipher
+        );
+
+        SCPHeader error_header = prepare_message_to_send(
+            MSG_TYPE_LOG_RESPONSE, 
+            0, 
+            1,
+            (const char *)error_cipher
+        );
+        error_header.payload_length = htons(error_len);
+
+        char error_buffer[sizeof(SCPHeader) + BUFFER_SIZE];
+        memcpy(error_buffer, &error_header, sizeof(SCPHeader));
+        memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
         send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
         return;
     }
 
+    int content_len = aes_encrypt(
+        (unsigned char *)content,
+        bytes_read,
+        chatKey.key,
+        chatKey.iv,
+        content_cipher
+    );
+
+    // Prepare and send encrypted content
+    SCPHeader content_header = prepare_message_to_send(
+        MSG_TYPE_LOG_RESPONSE,
+        0,
+        1,
+        (const char *)content_cipher
+    );
+    content_header.payload_length = htons(content_len);
+
+    // Allocate buffer for complete message
+    char *content_buffer = malloc(sizeof(SCPHeader) + content_len);
+    if (!content_buffer)
+    {
+        free(content);
+        free(content_cipher);
+        const char *error_msg = "Error: Server response buffer allocation failed";
+        unsigned char error_cipher[BUFFER_SIZE];
+        int error_len = aes_encrypt(
+            (unsigned char *)error_msg, 
+            strlen(error_msg),
+            chatKey.key, 
+            chatKey.iv, 
+            error_cipher
+        );
+
+        SCPHeader error_header = prepare_message_to_send(
+            MSG_TYPE_LOG_RESPONSE, 
+            0, 
+            1,
+            (const char *)error_cipher
+        );
+        error_header.payload_length = htons(error_len);
+
+        char error_buffer[sizeof(SCPHeader) + BUFFER_SIZE];
+        memcpy(error_buffer, &error_header, sizeof(SCPHeader));
+        memcpy(error_buffer + sizeof(SCPHeader), error_cipher, error_len);
+        send(client_socket, error_buffer, sizeof(SCPHeader) + error_len, 0);
+        return;
+    }
+
+    // Assemble and send complete message
     memcpy(content_buffer, &content_header, sizeof(SCPHeader));
     memcpy(content_buffer + sizeof(SCPHeader), content_cipher, content_len);
-
     send(client_socket, content_buffer, sizeof(SCPHeader) + content_len, 0);
+
+    // Clean up
+    free(content);
+    free(content_cipher);
     free(content_buffer);
-    
+
     print_with_timestamp("Sent file contents to %s", client_id);
+    log_info("Log file contents sent to %s", client_id);
 }
 
 void *handle_client(void *arg)

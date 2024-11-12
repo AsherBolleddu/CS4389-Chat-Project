@@ -9,12 +9,10 @@
 #include <openssl/evp.h>
 #include <openssl/aes.h>
 
-#include "common/crypto.h"
+#include "common/proto.h"    
+#include "common/crypto.h"   
 #include "common/prompt.h"
-#include "common/proto.h"
 #include "common/logger.h"
-
-#define BUFFER_SIZE 1024
 
 // 32-byte AES key
 unsigned char key[AES_KEY_LEN];
@@ -92,78 +90,126 @@ void send_message(int sock, uint8_t msg_type, uint32_t sender_id, uint32_t recip
 void *receive_messages(void *socket_desc)
 {
     int sock = *(int *)socket_desc;
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE * 2];  // Increased buffer size
     int bytes_read;
 
-    while (!should_exit && (bytes_read = recv(sock, buffer, BUFFER_SIZE, 0)) > 0)
+    while (!should_exit && (bytes_read = recv(sock, buffer, sizeof(buffer), 0)) > 0)
     {
         SCPHeader *header = (SCPHeader *)buffer;
-        unsigned char decrypted_message[BUFFER_SIZE];
-        int plaintext_len;
+        unsigned char *encrypted_data = (unsigned char *)(buffer + sizeof(SCPHeader));
+        unsigned char decrypted_message[BUFFER_SIZE * 2] = {0};  // Increased buffer size
+        int plaintext_len = 0;
 
-        // Decrypt the message if it has a payload
-        if (ntohs(header->payload_length) > 0)
+        // Get the actual payload length from the header
+        int payload_length = ntohs(header->payload_length);
+        
+        // Validate payload length
+        if (payload_length <= 0 || payload_length > BUFFER_SIZE * 2) {
+            printf("\rError: Invalid payload length received\n");
+            continue;
+        }
+
+        // Only attempt decryption if there's a payload
+        if (payload_length > 0)
         {
+            // Decrypt the message
             plaintext_len = aes_decrypt(
-                (unsigned char *)(buffer + sizeof(SCPHeader)),
-                ntohs(header->payload_length),
+                encrypted_data,
+                payload_length,
                 key,
                 iv,
-                decrypted_message);
-            decrypted_message[plaintext_len] = '\0';
+                decrypted_message
+            );
 
-            // Log received messages with modern hash calculation
-            if (authenticated) {
-                unsigned char message_hash[EVP_MAX_MD_SIZE];
-                unsigned int md_len;
-                
-                if (calculate_message_hash(decrypted_message, plaintext_len, message_hash, &md_len) == 0) {
-                    log_message("server", "client", (char *)decrypted_message, 
-                              message_hash, ntohs(header->seq_num));
-                }
+            if (plaintext_len < 0) {
+                printf("\rError: Decryption failed\n");
+                continue;
+            }
+
+            // Ensure null termination
+            if (plaintext_len < sizeof(decrypted_message)) {
+                decrypted_message[plaintext_len] = '\0';
+            } else {
+                decrypted_message[sizeof(decrypted_message) - 1] = '\0';
             }
         }
 
-        // Display the received message with timestamp
+        // Get current time for timestamp
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
 
-        if (header->msg_type == MSG_TYPE_ACK)
-        {
-            // MESSAGE_ACK
-            printf("\r[%02d:%02d:%02d] Server: Message delivered\n", t->tm_hour, t->tm_min, t->tm_sec);
-            log_info("Message delivery acknowledged by server");
+        // Handle different message types
+        switch (header->msg_type) {
+            case MSG_TYPE_ACK:
+                printf("\r[%02d:%02d:%02d] Server: Message delivered\n", 
+                       t->tm_hour, t->tm_min, t->tm_sec);
+                log_info("Message delivery acknowledged by server");
+                break;
+
+            case MSG_TYPE_GOODBYE_ACK:
+                printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", 
+                       t->tm_hour, t->tm_min, t->tm_sec);
+                log_info("Server acknowledged disconnect request");
+                should_exit = 1;
+                break;
+
+            case MSG_TYPE_LOG_RESPONSE:
+                if (plaintext_len > 0) {
+                    printf("\r[%02d:%02d:%02d] Received server log:\n%s\n", 
+                           t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
+                    log_info("Received server log file");
+                } else {
+                    printf("\r[%02d:%02d:%02d] Error: Empty log response\n",
+                           t->tm_hour, t->tm_min, t->tm_sec);
+                }
+                break;
+
+            case MSG_TYPE_PRIVATE_MSG:
+                if (plaintext_len > 0) {
+                    printf("\r[%02d:%02d:%02d] %s\n", 
+                           t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
+                    log_info("Received private message");
+                }
+                break;
+
+            case MSG_TYPE_CHAT:
+                if (plaintext_len > 0) {
+                    printf("\r[%02d:%02d:%02d] %s\n", 
+                           t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
+                    
+                    if (authenticated) {
+                        unsigned char message_hash[EVP_MAX_MD_SIZE];
+                        unsigned int md_len;
+                        
+                        if (calculate_message_hash(decrypted_message, plaintext_len, 
+                            message_hash, &md_len) == 0) {
+                            log_message("server", "client", (char *)decrypted_message, 
+                                      message_hash, ntohs(header->seq_num));
+                        }
+                    }
+                }
+                break;
+
+            default:
+                printf("\r[%02d:%02d:%02d] Unknown message type received: %d\n",
+                       t->tm_hour, t->tm_min, t->tm_sec, header->msg_type);
+                break;
         }
-        else if (header->msg_type == MSG_TYPE_GOODBYE_ACK)
-        {
-            // GOODBYE_ACK
-            printf("\r[%02d:%02d:%02d] Server: Goodbye acknowledged\n", t->tm_hour, t->tm_min, t->tm_sec);
-            log_info("Server acknowledged disconnect request");
-            should_exit = 1;
-            break;
-        }
-        else if (header->msg_type == MSG_TYPE_LOG_RESPONSE)
-        {
-            printf("\r[%02d:%02d:%02d] Received server log:\n\n%s\n", 
-                   t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
-            log_info("Received server log file");
-        }
-        else if (header->msg_type == MSG_TYPE_PRIVATE_MSG) 
-        {
-            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
-            log_info("Received private message");
-        }
-        else
-        {
-            printf("\r[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, decrypted_message);
-        }
+
+        // Print prompt after each message
         printf("Enter message: ");
         fflush(stdout);
     }
 
-    if (bytes_read <= 0 && !should_exit && !authenticated) {
-        printf("\rError: Failed to authenticate\n");
-        log_info("Authentication failed");
+    // Handle connection errors or closures
+    if (bytes_read <= 0 && !should_exit) {
+        if (!authenticated) {
+            printf("\rError: Failed to authenticate\n");
+            log_info("Authentication failed");
+        } else {
+            printf("\rError: Connection closed by server\n");
+            log_info("Connection closed by server");
+        }
         should_exit = 1;
     }
 
