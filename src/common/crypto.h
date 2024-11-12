@@ -2,10 +2,10 @@
 #define CRYPTO_H
 
 #include <stddef.h>  // Added for size_t definition
+#include "proto.h"   // Added to get BUFFER_SIZE definition
 
 #define AES_KEY_LEN 32
 #define AES_IV_SIZE 16
-#define BUFFER_SIZE 1024
 #define MAX_CLIENTS 10
 
 // Structure to hold key and IV pairs
